@@ -74,39 +74,40 @@ def call(token, method, path, body=None, timeout=180):
     return None
 
 
-def collect_tokens():
-    """未推送的改动文件。远程 ref 在本地对象库可能不存在（API 创建的 commit），
-    这时退回到「本地 HEAD 相对部署目录」的简单判断。"""
-    r = subprocess.run(["git", "-c", "core.quotepath=false", "status", "--porcelain"],
-                       cwd=ROOT, capture_output=True, text=True)
-    files = []
-    for line in r.stdout.split("\n"):
-        if not line.strip():
-            continue
-        status, path = line[:2], line[3:].strip()
-        if status.strip() in ("D",):
-            continue                                 # 删除需要 sha:null，这里不处理
-        files.append(path)
-    # 已提交但未推送的：优先与远程比对；远程 ref 在本地对象库不存在时
-    # （用 API 创建过 commit 就会这样）退回到「最新一次提交涉及的文件」
-    r2 = subprocess.run(["git", "-c", "core.quotepath=false", "diff", "--name-only",
-                         "origin/main..HEAD"], cwd=ROOT, capture_output=True, text=True)
-    if r2.returncode == 0 and r2.stdout.strip():
-        for line in r2.stdout.split("\n"):
-            if line.strip():
-                files.append(line.strip())
-    else:
-        r3 = subprocess.run(["git", "-c", "core.quotepath=false", "show",
-                             "--name-only", "--pretty=format:", "HEAD"],
-                            cwd=ROOT, capture_output=True, text=True)
-        for line in r3.stdout.split("\n"):
-            if line.strip():
-                files.append(line.strip())
-    seen, out = set(), []
-    for f in files:
-        if f not in seen:
-            seen.add(f)
-            out.append(f)
+def collect_tokens(token, base_tree):
+    """本地内容与远程 tree 不一致的文件。
+
+    为什么不用 git diff：远程的 commit 常常是**本脚本自己用 API 建的**，
+    它不存在于本地对象库，于是 `git diff origin/main..HEAD` 会失败；
+    而退回「最新一次提交涉及的文件」又会漏掉中间几次提交改过的文件
+    （实测漏掉过 macro_series.json 这类源数据）。
+
+    所以这里改成**按内容比对**：拿远程 tree 里每个文件的 blob sha，
+    和本地工作区文件算出的 sha 逐一对齐。与提交拓扑无关，也永远不会漏。
+    """
+    remote = {}
+    if base_tree:
+        tree = call(token, "GET", f"/repos/{OWNER}/{REPO}/git/trees/{base_tree}?recursive=1")
+        for e in (tree or {}).get("tree", []):
+            if e.get("type") == "blob":
+                remote[e["path"]] = e["sha"]
+
+    r = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True)
+    tracked = [l for l in r.stdout.split("\n") if l.strip()]
+    if not tracked:
+        return []
+
+    # 用工作区文件内容算 sha（而不是 index），这样未提交的改动也不会漏
+    h = subprocess.run(["git", "hash-object", "--stdin-paths"], cwd=ROOT,
+                       input="\n".join(tracked), capture_output=True, text=True)
+    local_sha = [l.strip() for l in h.stdout.split("\n") if l.strip()]
+
+    out = []
+    for path, sha in zip(tracked, local_sha):
+        if not os.path.isfile(os.path.join(ROOT, path)):
+            continue                                  # 删除需要 sha:null，这里不处理
+        if remote.get(path) != sha:
+            out.append(path)
     return out
 
 
@@ -118,10 +119,18 @@ def main():
     token = load_token()
     os.chdir(ROOT)
 
+    # 先读远程 HEAD / tree —— 待推送清单要按内容跟它对，必须在收集文件之前拿到
+    ref = call(token, "GET", f"/repos/{OWNER}/{REPO}/git/ref/heads/main")
+    if not ref:
+        print("  无法读取远程 HEAD")
+        return 1
+    head_sha = ref["object"]["sha"]
+    base_tree = call(token, "GET", f"/repos/{OWNER}/{REPO}/git/commits/{head_sha}")["tree"]["sha"]
+
     if argv:
         names = argv
     else:
-        names = collect_tokens()
+        names = collect_tokens(token, base_tree)
         if not names:
             print("  没有可推送的改动")
             return 0
@@ -143,13 +152,6 @@ def main():
         print("  （--dry，未实际推送）")
         return 0
 
-    # ---- 远程当前 HEAD ----
-    ref = call(token, "GET", f"/repos/{OWNER}/{REPO}/git/ref/heads/main")
-    if not ref:
-        print("  无法读取远程 HEAD")
-        return 1
-    head_sha = ref["object"]["sha"]
-    base_tree = call(token, "GET", f"/repos/{OWNER}/{REPO}/git/commits/{head_sha}")["tree"]["sha"]
     print(f"\n  远程 HEAD {head_sha[:8]} / tree {base_tree[:8]}")
 
     entries = []
