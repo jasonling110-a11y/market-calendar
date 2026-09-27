@@ -393,11 +393,55 @@ def main():
     print("[3/3] 抓取东财中国宏观（覆盖金十同名指标，数据源更新）...")
     em = fetch_cn_east()
 
-    merged = dict(data)
-    merged.update(stat)
-    # 东财的中国数据放在最后合并：同名指标以它为准，
-    # 因为金十这部分滞后一年（实测停在 2025-09，东财已到 2026-08）
-    merged.update(em)
+    # ---- 与上次已有数据做并集合并，而不是整体覆盖 ----
+    # 为什么必须这样：某个数据源今天抓失败（或换了运行环境、没装 akshare）时，
+    # 整体覆盖会把上次已有的指标一起抹掉。实测踩过：
+    # 用没装 akshare 的 Python 跑一次，cn_lpr / cn_shrong 直接消失。
+    # 云端每天定时跑，这种「静默丢数据」是最难发现的坑。
+    prev = {}
+    if os.path.exists(OUT):
+        try:
+            with open(OUT, encoding="utf-8") as f:
+                prev = json.load(f)
+        except Exception:
+            prev = {}
+
+    def merge_series(old_e, new_e):
+        """同一指标的历史序列取并集：同一天以新抓到的为准，
+        新数据里没有的旧日子保留下来 —— 历史只增不减。"""
+        if not new_e:
+            return old_e
+        if not old_e:
+            return new_e
+        byd = {}
+        for x in old_e.get("v", []):
+            if x.get("d"):
+                byd[x["d"]] = x
+        for x in new_e.get("v", []):
+            if x.get("d"):
+                byd[x["d"]] = x
+        out = dict(old_e)
+        out.update(new_e)
+        out["v"] = [byd[k] for k in sorted(byd)]
+        return out
+
+    merged = {}
+    for k in set(prev) | set(data) | set(stat) | set(em):
+        # 优先级：东财中国 > 统计局 > 金十（东财这部分数据源最新）
+        if k in em:
+            new_e = em[k]
+        elif k in stat:
+            new_e = stat[k]
+        elif k in data:
+            new_e = data[k]
+        else:
+            new_e = None
+        merged[k] = merge_series(prev.get(k), new_e)
+
+    stale = [k for k in merged if k not in data and k not in stat and k not in em]
+    if stale:
+        print(f"    [i] {len(stale)} 个指标本次未抓到，沿用上次数据：{', '.join(sorted(stale)[:8])}"
+              + ("…" if len(stale) > 8 else ""))
 
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, separators=(",", ":"))
