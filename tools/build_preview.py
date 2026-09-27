@@ -62,6 +62,7 @@ body{overflow:hidden}
 .wb-dot{width:6px;height:6px;border-radius:50%;background:#30d158;flex-shrink:0;transition:background .3s}
 .wb-dot.busy{background:var(--warn);animation:wbPulse 1.3s ease-in-out infinite}
 .wb-dot.err{background:var(--up)}
+.wb-dot.warn{background:var(--warn)}
 @keyframes wbPulse{0%,100%{opacity:1}50%{opacity:.25}}
 .wb-t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wb-btn{padding:3px 11px;border-radius:9px;background:var(--surface2);color:var(--text2);cursor:pointer;flex-shrink:0;font-size:11.5px;transition:background .2s,color .2s}
@@ -637,8 +638,17 @@ function wbTick(d){
     wbSet('busy','正在更新 · '+(d.current||'准备中')+'（'+done+'/'+st.length+'）');
     return;
   }
-  if(d.error){ wbSet('err','上次更新出错：'+d.error+'（已沿用现有数据）'); return; }
-  wbSet('','本地工作台 · 上次更新 '+(d.lastSuccess?d.lastSuccess.slice(11,16):'—')+' · 数据变更后自动刷新');
+  const t=d.lastSuccess?d.lastSuccess.slice(11,16):'—';
+  const p=d.pendingUP||0;
+  if(d.error){
+    wbSet('err','上次更新出错：'+d.error+'（已沿用现有数据）');
+  }else if(p>0){
+    // 这一条很重要：转写是机器做的，但「要点」必须 AI 阅读后写入，
+    // 所以点完「完整更新」B 站区块仍可能没有变化 —— 必须让用户看得见，不能静默。
+    wbSet('warn','上次更新 '+t+' ｜ 有 '+p+' 个 B 站视频已转写但缺要点（这步需要 AI 提炼）');
+  }else{
+    wbSet('','本地工作台 · 上次更新 '+t+' · 数据变更后自动刷新');
+  }
   if(wbVer && d.dataVersion && d.dataVersion!==wbVer){
     wbVer=d.dataVersion;
     setTimeout(()=>location.reload(),700);
@@ -646,7 +656,10 @@ function wbTick(d){
 }
 function wbRefresh(mode){
   const msg=mode==='full'
-    ?'完整更新会重新转写 B 站视频，约 5-10 分钟，继续？'
+    ?'完整更新：抓日历/板块/宏观 + 下载并转写 B 站新视频。\n\n'
+     +'耗时约 5-10 分钟（要跑本地语音识别）。\n\n'
+     +'注意：转写只是「原材料」，要变成日历里的「要点」还需要 AI 读一遍——\n'
+     +'所以点完之后 B 站区块可能仍无变化，状态栏会提示还差几个待提炼。\n\n继续？'
     :'快速刷新会重新抓取财经日历 / 板块行情 / 宏观数值，约 1-2 分钟，继续？';
   if(!confirm(msg)) return;
   fetch('/api/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:mode})})

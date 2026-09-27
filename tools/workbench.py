@@ -38,6 +38,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PREVIEW = os.path.join(ROOT, "preview")
 DATA = os.path.join(ROOT, "miniprogram", "data")
+TDATA = os.path.join(HERE, "data")            # 抓取脚本的原始数据目录
+UP_RAW = os.path.join(TDATA, "up_raw.json")
+UP_SUM = os.path.join(TDATA, "up_summary.json")
+FULL_MARK = os.path.join(TDATA, ".full_ran.json")   # 上次「完整更新」的时间戳
+
+# 两次「完整更新（含 B 站转写）」之间至少间隔的小时数。
+# 为什么按小时而不是按自然日：早上开机补跑一次、晚上 21:30 再跑一次，
+# 同一天需要跑两回（UP 主晚上才发视频）。按天会导致晚上那次被误跳过。
+BILI_EVERY = 8.0
+BILI_ENABLED = True
 
 # 抓 B 站视频要点需要 whisper / yt-dlp，装在虚拟环境里；
 # 其余脚本只用标准库，用当前解释器即可。
@@ -95,6 +105,8 @@ class State:
                 "log": self.log[-40:],
                 "trigger": self.trigger,
                 "dataVersion": data_version(),
+                "pendingUP": len(pending_up()),
+                "fullAgeH": full_age_hours(),
                 "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
 
@@ -167,6 +179,68 @@ def data_age_hours():
         return None
 
 
+# ---------------------------------------------------------------- B 站这条链路
+# 为什么要单独记账：转写（whisper）能在本机自动跑，但「要点」必须由 AI
+# 阅读转写后写入 up_summary.json —— 纯脚本做不了这一步。所以这里只负责
+# 判断「该不该再转写一次」以及「还差几个视频没提炼」，让缺口在界面上可见。
+def load_json(path, default):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def pending_up():
+    """已转写但还没有要点总结的视频列表（B 站那一块真正缺的东西）"""
+    raw = load_json(UP_RAW, {})
+    summ = load_json(UP_SUM, {})
+    if not isinstance(raw, dict) or not isinstance(summ, dict):
+        return []
+    return [b for b in raw if b not in summ]
+
+
+def full_age_hours():
+    """距上次完整更新（含 B 站）多少小时；None 表示从未跑过。
+    没有标记文件时退回用 up_raw.json 的修改时间 —— 那正是上次转写成功的时刻，
+    这样首次启用不会因为「没有标记」就立刻跑一次 10 分钟的转写。"""
+    mark = load_json(FULL_MARK, {})
+    ts = mark.get("ts") if isinstance(mark, dict) else None
+    if ts is None:
+        try:
+            ts = os.stat(UP_RAW).st_mtime
+        except OSError:
+            return None
+    try:
+        return (time.time() - float(ts)) / 3600.0
+    except (TypeError, ValueError):
+        return None
+
+
+def mark_full():
+    """记录一次成功的完整更新（含 B 站步骤）"""
+    try:
+        with open(FULL_MARK, "w", encoding="utf-8") as f:
+            json.dump({
+                "ts": time.time(),
+                "at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }, f)
+    except OSError:
+        pass
+
+
+def need_full():
+    """要不要在本次抓取里带上 B 站转写。返回 (是否, 原因)"""
+    if not BILI_ENABLED:
+        return False, "已用 --no-bili 关闭 B 站自动转写"
+    age = full_age_hours()
+    if age is None:
+        return True, "尚未做过完整更新"
+    if age >= BILI_EVERY:
+        return True, f"距上次完整更新已 {age:.1f} 小时"
+    return False, f"{age:.1f} 小时前刚做过完整更新，跳过"
+
+
 def run_pipeline(mode, trigger):
     """在后台线程里跑抓取流水线"""
     steps = FULL_STEPS if mode == "full" else QUICK_STEPS
@@ -210,6 +284,16 @@ def run_pipeline(mode, trigger):
         ok, err = False, f"{type(e).__name__}: {e}"
         STATE.line(f"[✗] {err}")
 
+    # B 站步骤成功才记账，否则下次仍会补跑（不会因为一次失败就哑掉）
+    if mode == "full" and STATE.steps and STATE.steps[0]["state"] == "done":
+        mark_full()
+
+    miss = pending_up()
+    if miss:
+        STATE.line(f"[!] 有 {len(miss)} 个 B 站视频已转写但还没有要点："
+                   f"{'、'.join(miss[:5])}{' 等' if len(miss) > 5 else ''}")
+        STATE.line("    这一步需要 AI 阅读转写后写入 tools/data/up_summary.json，脚本无法代劳")
+
     STATE.finish(ok, err)
     stamp = datetime.now().strftime("%H:%M:%S")
     STATE.line(f"[✓] {stamp} 更新结束")
@@ -227,12 +311,22 @@ def scheduler_loop(schedule):
         now = datetime.now()
         hhmm = now.strftime("%H:%M")
         today = now.strftime("%Y-%m-%d")
-        for slot in schedule:
-            if hhmm == slot and STATE.ran_today.get(slot) != today:
-                STATE.ran_today[slot] = today
-                if not STATE.updating:
-                    STATE.line(f"[i] 定时任务 {slot} 触发")
-                    start_refresh("quick", "schedule")
+        for slot, mode in schedule:
+            if hhmm != slot or STATE.ran_today.get(slot) == today:
+                continue
+            STATE.ran_today[slot] = today
+            if STATE.updating:
+                continue
+            if mode == "full":
+                want, why = need_full()
+                if not want:
+                    STATE.line(f"[i] 定时任务 {slot} 跳过 B 站转写：{why}")
+                    continue
+                STATE.line(f"[i] 定时任务 {slot} 触发（完整更新 · {why}）")
+                start_refresh("full", "schedule")
+            else:
+                STATE.line(f"[i] 定时任务 {slot} 触发（快速刷新）")
+                start_refresh("quick", "schedule")
 
 
 # ---------------------------------------------------------------- HTTP
@@ -306,10 +400,30 @@ class Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
 
+def parse_schedule(items):
+    """把 ["08:30:quick","21:30:full","18:00"] 解析成 [("08:30","quick"), ...]"""
+    out = []
+    for it in items:
+        parts = it.split(":")
+        if len(parts) < 2:
+            continue
+        try:
+            hhmm = f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+        except ValueError:
+            continue
+        mode = parts[2].strip() if len(parts) > 2 else "quick"
+        out.append((hhmm, mode if mode in ("quick", "full") else "quick"))
+    return out
+
+
 def main():
+    global BILI_EVERY, BILI_ENABLED
+
     port = 8787
     host = "127.0.0.1"
-    schedule = ["08:00", "18:00"]
+    # 默认排期：白天三次轻量刷新，晚上 21:30 做一次完整更新（含 B 站转写）。
+    # 但真正保证「不卡点」的是下面的启动补跑 —— 定时只是锦上添花。
+    schedule = parse_schedule(["08:30:quick", "12:30:quick", "18:00:quick", "21:30:full"])
     auto_fetch = True
     max_age = 10.0
 
@@ -319,11 +433,15 @@ def main():
         elif a.startswith("--host="):
             host = a.split("=", 1)[1]
         elif a.startswith("--schedule="):
-            schedule = [x.strip() for x in a.split("=", 1)[1].split(",") if x.strip()]
+            schedule = parse_schedule([x for x in a.split("=", 1)[1].split(",") if x.strip()])
         elif a == "--no-autofetch":
             auto_fetch = False
+        elif a == "--no-bili":
+            BILI_ENABLED = False
         elif a.startswith("--max-age="):
             max_age = float(a.split("=", 1)[1])
+        elif a.startswith("--bili-every="):
+            BILI_EVERY = float(a.split("=", 1)[1])
 
     if not os.path.exists(os.path.join(PREVIEW, "index.html")):
         print("[!] preview/index.html 不存在，先跑一次 build_preview.py")
@@ -331,16 +449,19 @@ def main():
 
     threading.Thread(target=scheduler_loop, args=(schedule,), daemon=True).start()
 
-    # 启动时若数据偏旧，自动补抓一次。
-    # 这样双击启动后打开页面看到的就是新的，不需要用户记得手动点刷新。
+    # 启动时补跑：这是「不必卡点开机」的关键。
+    # 只要数据偏旧、或者距上次 B 站转写够久，就自动抓一次；
+    # 因此你任何时候打开 Mac 双击启动，都会自动补齐，不需要正好 21:30 在场。
     age = data_age_hours()
     if auto_fetch:
-        if age is None:
-            print("  数据尚未就绪，启动后自动抓取一次…", flush=True)
-            start_refresh("quick", "startup")
-        elif age > max_age:
-            print(f"  数据已 {age:.1f} 小时未更新，启动后自动抓取…", flush=True)
-            start_refresh("quick", "startup")
+        want_full, why = need_full()
+        if want_full or age is None or age > max_age:
+            mode = "full" if want_full else "quick"
+            label = "完整更新（含 B 站转写，约 5-10 分钟）" if mode == "full" else "快速刷新"
+            print(f"  启动后自动补跑一次 · {label} ｜ {why}", flush=True)
+            if age is not None and age > max_age and not want_full:
+                print(f"    （数据已 {age:.1f} 小时未更新）", flush=True)
+            start_refresh(mode, "startup")
         else:
             print(f"  数据 {age:.1f} 小时前更新过，本次跳过抓取", flush=True)
 
@@ -349,7 +470,15 @@ def main():
     print("  市场日历 · 本地工作台")
     print("  " + "-" * 46)
     print(f"  地址：      http://{host}:{port}/")
-    print(f"  定时抓取：  每天 { '、'.join(schedule) }")
+    print(f"  定时抓取：  " + "、".join(
+        f"{s}（{'完整' if m == 'full' else '快速'}）" for s, m in schedule))
+    print(f"  启动补跑：  " + ("开启" if auto_fetch else "关闭")
+          + "（数据超过 %.0f 小时未更新即抓）" % max_age)
+    print(f"  B 站转写：  " + ("开启" if BILI_ENABLED else "关闭")
+          + (f"，最短间隔 {BILI_EVERY:.0f} 小时" if BILI_ENABLED else ""))
+    n_miss = len(pending_up())
+    if n_miss:
+        print(f"  [!] 有 {n_miss} 个 B 站视频已转写但还没有要点（需 AI 提炼）")
     print(f"  数据目录：  {DATA}")
     print("  " + "-" * 46)
     print("  按 Ctrl+C 停止")
