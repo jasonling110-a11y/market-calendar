@@ -1,0 +1,368 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+市场日历 · 本地工作台
+
+把整套数据管线 + 界面跑成一个常驻的本地网站：
+
+    http://127.0.0.1:8787/
+
+提供的能力：
+  - 网页界面：财经日历 / 关键数值 / 历史事件 / UP 主观点 / 复盘笔记
+  - 每天定时自动抓取（默认 08:00 与 18:00）
+  - 页面上可手动触发「快速刷新」与「完整更新」
+  - 页面自动感知数据变化并重载，不需要手动按 F5
+
+为什么不用现成的 Web 框架：
+  整条数据管线本来就是纯标准库的，服务器也保持零依赖，
+  这样它能在任何一台 Mac 上直接跑起来，不需要 pip install 任何东西。
+
+用法：
+    python3 tools/workbench.py                 # 前台运行
+    python3 tools/workbench.py --port 9000
+    python3 tools/workbench.py --schedule 07:30,12:00,20:00
+"""
+
+import http.server
+import json
+import os
+import socketserver
+import subprocess
+import sys
+import threading
+import time
+import urllib.parse
+from datetime import datetime
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+PREVIEW = os.path.join(ROOT, "preview")
+DATA = os.path.join(ROOT, "miniprogram", "data")
+
+# 抓 B 站视频要点需要 whisper / yt-dlp，装在虚拟环境里；
+# 其余脚本只用标准库，用当前解释器即可。
+VENV_PY = os.path.expanduser("~/.workbuddy/binaries/python/envs/default/bin/python")
+SYS_PY = sys.executable
+
+
+def pick_py(script):
+    return VENV_PY if script == "fetch_bilibili.py" and os.path.exists(VENV_PY) else SYS_PY
+
+
+# ---------------------------------------------------------------- 抓取任务
+# 快速模式：只要数据源新鲜就够了，1～2 分钟
+QUICK_STEPS = [
+    ("财经日历（含未来排期）", "fetch_calendar.py"),
+    ("A 股板块行情", "fetch_sectors.py"),
+    ("宏观数值与市场预期", "fetch_macro.py"),
+    ("重建数据包", "build_dataset.py"),
+    ("重新生成页面", "build_preview.py"),
+    ("日历订阅源", "build_ics.py"),
+]
+
+# 完整模式：多出 B 站视频转写（要跑 whisper，5～10 分钟）
+FULL_STEPS = [("B 站视频要点（语音转写）", "fetch_bilibili.py")] + QUICK_STEPS
+
+
+class State:
+    """抓取状态。多线程读写，全部走锁。"""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.updating = False
+        self.mode = None
+        self.started_at = None
+        self.finished_at = None
+        self.last_success = None
+        self.error = None
+        self.current = ""
+        self.steps = []
+        self.log = []
+        self.trigger = ""            # manual / schedule
+        self.ran_today = {}          # 'HH:MM' -> 'YYYY-MM-DD'
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "updating": self.updating,
+                "mode": self.mode,
+                "startedAt": self.started_at,
+                "finishedAt": self.finished_at,
+                "lastSuccess": self.last_success,
+                "error": self.error,
+                "current": self.current,
+                "steps": list(self.steps),
+                "log": self.log[-40:],
+                "trigger": self.trigger,
+                "dataVersion": data_version(),
+                "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+
+    def begin(self, mode, trigger):
+        with self._lock:
+            if self.updating:
+                return False
+            self.updating = True
+            self.mode = mode
+            self.trigger = trigger
+            self.started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.finished_at = None
+            self.error = None
+            self.current = ""
+            self.log = []
+            steps = FULL_STEPS if mode == "full" else QUICK_STEPS
+            self.steps = [{"name": n, "state": "pending"} for n, _ in steps]
+            return True
+
+    def set_step(self, idx, state):
+        with self._lock:
+            if 0 <= idx < len(self.steps):
+                self.steps[idx]["state"] = state
+                self.current = self.steps[idx]["name"]
+
+    def line(self, text):
+        with self._lock:
+            self.log.append(text.rstrip())
+
+    def finish(self, ok, err=None):
+        with self._lock:
+            self.updating = False
+            self.current = ""
+            self.finished_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if ok:
+                self.last_success = self.finished_at
+                self.error = None
+            else:
+                self.error = err or "未知错误"
+
+
+STATE = State()
+
+# 启动时用产出文件的修改时间作为「上次更新」的初值。
+# 不这么做的话，每次重启状态栏都显示「上次更新 —」，看起来像从未更新过，
+# 而实际上数据可能几分钟前才抓过。
+try:
+    _st = os.stat(os.path.join(PREVIEW, "index.html"))
+    STATE.last_success = datetime.fromtimestamp(_st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+except OSError:
+    pass
+
+
+def data_version():
+    """用产出文件的指纹表示数据版本，前端据此判断要不要重载"""
+    try:
+        f = os.path.join(PREVIEW, "index.html")
+        st = os.stat(f)
+        return f"{int(st.st_mtime)}-{st.st_size}"
+    except OSError:
+        return "0-0"
+
+
+def data_age_hours():
+    """页面数据距今多少小时。返回 None 表示还没有数据。"""
+    try:
+        st = os.stat(os.path.join(PREVIEW, "index.html"))
+        return (time.time() - st.st_mtime) / 3600.0
+    except OSError:
+        return None
+
+
+def run_pipeline(mode, trigger):
+    """在后台线程里跑抓取流水线"""
+    steps = FULL_STEPS if mode == "full" else QUICK_STEPS
+    if not STATE.begin(mode, trigger):
+        return
+
+    ok = True
+    err = None
+    try:
+        for idx, (name, script) in enumerate(steps):
+            path = os.path.join(HERE, script)
+            if not os.path.exists(path):
+                STATE.set_step(idx, "skipped")
+                STATE.line(f"[!] 找不到 {script}，跳过")
+                continue
+            STATE.set_step(idx, "running")
+            STATE.line(f"── {name} ──")
+            try:
+                proc = subprocess.Popen(
+                    [pick_py(script), script],
+                    cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, bufsize=1,
+                )
+                for raw in proc.stdout:
+                    line = raw.rstrip()
+                    # 进度条之类的输出太吵，丢掉
+                    if line and "it/s" not in line and "it]" not in line:
+                        STATE.line(line)
+                rc = proc.wait()
+            except Exception as e:                       # noqa: BLE001
+                rc, err = 1, f"{script}: {type(e).__name__} {e}"
+                STATE.line(f"[✗] {err}")
+            if rc == 0:
+                STATE.set_step(idx, "done")
+            else:
+                # 单个数据源失败不算致命（脚本内部会沿用上次数据），
+                # 但要让用户看得见，不能静默跳过
+                STATE.set_step(idx, "failed")
+                STATE.line(f"[!] {name} 返回码 {rc}，沿用已有数据")
+    except Exception as e:                               # noqa: BLE001
+        ok, err = False, f"{type(e).__name__}: {e}"
+        STATE.line(f"[✗] {err}")
+
+    STATE.finish(ok, err)
+    stamp = datetime.now().strftime("%H:%M:%S")
+    STATE.line(f"[✓] {stamp} 更新结束")
+
+
+def start_refresh(mode="quick", trigger="manual"):
+    t = threading.Thread(target=run_pipeline, args=(mode, trigger), daemon=True)
+    t.start()
+
+
+def scheduler_loop(schedule):
+    """到点触发。每天每个时间点只跑一次（靠 ran_today 记录）。"""
+    while True:
+        time.sleep(20)
+        now = datetime.now()
+        hhmm = now.strftime("%H:%M")
+        today = now.strftime("%Y-%m-%d")
+        for slot in schedule:
+            if hhmm == slot and STATE.ran_today.get(slot) != today:
+                STATE.ran_today[slot] = today
+                if not STATE.updating:
+                    STATE.line(f"[i] 定时任务 {slot} 触发")
+                    start_refresh("quick", "schedule")
+
+
+# ---------------------------------------------------------------- HTTP
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, directory=PREVIEW, **kw)
+
+    def log_message(self, fmt, *args):     # 静音默认访问日志
+        pass
+
+    def _json(self, obj, code=200):
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _index_path_safe(self):
+        """禁止路径穿越：只允许 preview/ 目录下的文件"""
+        p = urllib.parse.urlparse(self.path).path
+        target = os.path.normpath(os.path.join(PREVIEW, p.lstrip("/")))
+        return target.startswith(PREVIEW)
+
+    def do_GET(self):
+        path = urllib.parse.urlparse(self.path).path
+
+        if path == "/api/status":
+            return self._json(STATE.snapshot())
+
+        if path == "/api/health":
+            return self._json({"ok": True, "port": self.server.server_address[1]})
+
+        if not self._index_path_safe():
+            return self._json({"error": "forbidden"}, 403)
+
+        # 静态文件不要缓存，否则数据更新后页面还是旧的
+        return super().do_GET()
+
+    def end_headers(self):
+        if self.path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-store")
+        elif self.path in ("/", "/index.html"):
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
+    def do_POST(self):
+        path = urllib.parse.urlparse(self.path).path
+
+        if path == "/api/refresh":
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8") or "{}")
+            except ValueError:
+                body = {}
+            mode = body.get("mode", "quick")
+            if mode not in ("quick", "full"):
+                return self._json({"error": "mode 只能是 quick 或 full"}, 400)
+            if STATE.updating:
+                return self._json({"error": "已有更新在进行中", "status": STATE.snapshot()}, 409)
+            start_refresh(mode, "manual")
+            return self._json({"ok": True, "mode": mode}, 202)
+
+        return self._json({"error": "not found"}, 404)
+
+
+class Server(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+def main():
+    port = 8787
+    host = "127.0.0.1"
+    schedule = ["08:00", "18:00"]
+    auto_fetch = True
+    max_age = 10.0
+
+    for a in sys.argv[1:]:
+        if a.startswith("--port="):
+            port = int(a.split("=", 1)[1])
+        elif a.startswith("--host="):
+            host = a.split("=", 1)[1]
+        elif a.startswith("--schedule="):
+            schedule = [x.strip() for x in a.split("=", 1)[1].split(",") if x.strip()]
+        elif a == "--no-autofetch":
+            auto_fetch = False
+        elif a.startswith("--max-age="):
+            max_age = float(a.split("=", 1)[1])
+
+    if not os.path.exists(os.path.join(PREVIEW, "index.html")):
+        print("[!] preview/index.html 不存在，先跑一次 build_preview.py")
+        return 1
+
+    threading.Thread(target=scheduler_loop, args=(schedule,), daemon=True).start()
+
+    # 启动时若数据偏旧，自动补抓一次。
+    # 这样双击启动后打开页面看到的就是新的，不需要用户记得手动点刷新。
+    age = data_age_hours()
+    if auto_fetch:
+        if age is None:
+            print("  数据尚未就绪，启动后自动抓取一次…", flush=True)
+            start_refresh("quick", "startup")
+        elif age > max_age:
+            print(f"  数据已 {age:.1f} 小时未更新，启动后自动抓取…", flush=True)
+            start_refresh("quick", "startup")
+        else:
+            print(f"  数据 {age:.1f} 小时前更新过，本次跳过抓取", flush=True)
+
+    httpd = Server((host, port), Handler)
+    print("")
+    print("  市场日历 · 本地工作台")
+    print("  " + "-" * 46)
+    print(f"  地址：      http://{host}:{port}/")
+    print(f"  定时抓取：  每天 { '、'.join(schedule) }")
+    print(f"  数据目录：  {DATA}")
+    print("  " + "-" * 46)
+    print("  按 Ctrl+C 停止")
+    print("", flush=True)
+
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\n  已停止。")
+    finally:
+        httpd.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
