@@ -1,0 +1,94 @@
+/* app.wxss —— 全局样式（Apple Calendar 深色观感） */
+page {
+  /* 色板 */
+  --c-bg: #000000;
+  --c-surface: #1c1c1e;
+  --c-surface-2: #2c2c2e;
+  --c-separator: #38383a;
+  --c-text: #ffffff;
+  --c-text-2: #98989f;
+  --c-text-3: #636366;
+
+  /* A 股惯例：涨红跌绿 */
+  --c-up: #ff453a;
+  --c-down: #30d158;
+  --c-accent: #ff3b30;      /* 今天 / 选中强调 */
+  --c-warn: #ffd60a;        /* 待官宣 */
+  --c-info: #0a84ff;        /* 已确认 */
+
+  --radius: 16rpx;
+  --radius-sm: 10rpx;
+
+  background-color: var(--c-bg);
+  color: var(--c-text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+
+view, text, scroll-view, swiper, swiper-item {
+  box-sizing: border-box;
+}
+
+/* 卡片 */
+.card {
+  background: var(--c-surface);
+  border-radius: var(--radius);
+  padding: 24rpx;
+  margin: 0 24rpx 20rpx;
+}
+
+.card-title {
+  font-size: 26rpx;
+  color: var(--c-text-2);
+  letter-spacing: 1rpx;
+  margin-bottom: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 通用行 */
+.row {
+  display: flex;
+  align-items: flex-start;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid var(--c-separator);
+}
+.row:last-child {
+  border-bottom: none;
+}
+
+/* 标签 */
+.tag {
+  display: inline-block;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  line-height: 32rpx;
+  margin-right: 8rpx;
+  flex-shrink: 0;
+}
+.tag-us { background: rgba(10, 132, 255, .18); color: #6cb6ff; }
+.tag-cn { background: rgba(255, 59, 48, .16); color: #ff7b72; }
+.tag-tech { background: rgba(175, 82, 222, .18); color: #d0a1ff; }
+.tag-shock { background: rgba(255, 149, 0, .18); color: #ffb340; }
+.tag-policy { background: rgba(48, 209, 88, .16); color: #5fd980; }
+.tag-market { background: rgba(255, 214, 10, .16); color: #ffd60a; }
+
+/* 置信度 */
+.conf {
+  font-size: 20rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  flex-shrink: 0;
+}
+.conf-confirmed { color: #6cb6ff; border: 1rpx solid rgba(10,132,255,.5); }
+.conf-estimated { color: #98989f; border: 1rpx solid var(--c-separator); }
+.conf-rumored { color: #ffb340; border: 1rpx solid rgba(255,149,0,.5); }
+
+/* 安全区 */
+.safe-bottom {
+  padding-bottom: constant(safe-area-inset-bottom);
+  padding-bottom: env(safe-area-inset-bottom);
+}

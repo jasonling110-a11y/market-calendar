@@ -1,0 +1,81 @@
+name: 每日更新市场日历
+
+# 为什么放在 GitHub 上跑：这条流水线全部是纯标准库 Python，
+# 不需要任何本地环境。所以即使你的 MacBook 关机，数据也会照常更新。
+on:
+  schedule:
+    # GitHub 的 cron 用 UTC 时间。13:00 UTC = 北京时间 21:00
+    # 注意：定时任务在整点高峰期可能延迟几分钟到几十分钟，属正常现象
+    - cron: '0 13 * * *'
+  workflow_dispatch:          # 也支持在网页上手动点一下立即运行
+
+# 需要写权限才能把生成结果提交回仓库
+permissions:
+  contents: write
+
+# 避免两次运行同时改同一批文件
+concurrency:
+  group: daily-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 不需要 pip install：所有脚本只依赖 Python 标准库。
+      # fetch_macro.py 里的 akshare 是可选增强，缺了会自动跳过统计局口径。
+      - name: 抓取数据
+        run: |
+          cd tools
+          echo "── 财经日历（东财）──"
+          python3 fetch_calendar.py
+          echo "── A 股板块行情 ──"
+          python3 fetch_sectors.py || echo "  [!] 板块抓取失败，沿用上次数据"
+          echo "── 宏观数值与市场预期 ──"
+          python3 fetch_macro.py || echo "  [!] 宏观抓取失败，沿用上次数据"
+
+      - name: 重建数据与日历订阅源
+        run: |
+          cd tools
+          python3 build_dataset.py
+          python3 build_preview.py
+          python3 build_ics.py
+
+      - name: 推送今日摘要到微信（未配置 token 时自动跳过）
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        run: |
+          cd tools
+          python3 push_daily.py || echo "  [!] 推送未执行（未配置 token 或请求失败）"
+
+      - name: 提交更新
+        run: |
+          git config user.name  "market-calendar-bot"
+          git config user.email "market-calendar-bot@users.noreply.github.com"
+          git add docs miniprogram/data tools/data preview 2>/dev/null || true
+          if git diff --staged --quiet; then
+            echo "本次没有产生变化，跳过提交"
+          else
+            # 提交本身也算「仓库活动」，可避免 GitHub 在 60 天无活动后停掉定时任务
+            git commit -m "每日更新 $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M')"
+            git push
+          fi
+
+      - name: 输出结果摘要
+        if: always()
+        run: |
+          echo "### 本次更新结果" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f docs/market-calendar.ics ]; then
+            echo "- 日历订阅源：$(grep -c 'BEGIN:VEVENT' docs/market-calendar.ics) 个日程" >> $GITHUB_STEP_SUMMARY
+            echo "- 文件大小：$(du -h docs/market-calendar.ics | cut -f1)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- 订阅地址：${{ github.event.repository.html_url }}" >> $GITHUB_STEP_SUMMARY

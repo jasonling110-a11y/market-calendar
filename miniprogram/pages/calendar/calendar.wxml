@@ -1,0 +1,297 @@
+<!-- pages/calendar/calendar.wxml —— Apple Calendar 风格市场日历 -->
+<view class="wrap">
+
+  <!-- 顶部：年月 + 切换 -->
+  <view class="hdr">
+    <view class="hdr-l">
+      <text class="m-title">{{year}}年{{month}}月</text>
+      <text class="m-sub" bindtap="onRefreshTap">
+        {{synced ? '云端 ' + syncTime + ' 更新 · 点此刷新' : '内置离线数据 · 点此查看更新方式'}}
+      </text>
+    </view>
+    <view class="hdr-r">
+      <view class="nav" bindtap="onPrev">‹</view>
+      <view class="nav" bindtap="onNext">›</view>
+      <view class="today" bindtap="goToday">今天</view>
+      <view class="notes-entry" bindtap="goNotes">笔记</view>
+    </view>
+  </view>
+
+  <!-- 模式切换 -->
+  <view class="seg">
+    <view class="seg-i {{mode === 'history' ? 'on' : ''}}" data-m="history" bindtap="onMode">历史回顾</view>
+    <view class="seg-i {{mode === 'upcoming' ? 'on' : ''}}" data-m="upcoming" bindtap="onMode">未来预告</view>
+  </view>
+
+  <!-- 星期表头 -->
+  <view class="wk">
+    <view class="wk-i" wx:for="{{weekdays}}" wx:key="*this">{{item}}</view>
+  </view>
+
+  <!-- 月视图 -->
+  <swiper class="sw" current="{{swiperIndex}}" bindchange="onSwipe" duration="220">
+    <swiper-item wx:for="{{slots}}" wx:for-item="slot" wx:key="key">
+      <view class="grid">
+        <view wx:for="{{slot.cells}}" wx:for-item="cell" wx:key="ymd"
+              class="cell {{cell.cur ? '' : 'dim'}} {{cell.isSel ? 'sel' : ''}} {{cell.today ? 'today' : ''}}"
+              data-y="{{cell.y}}" data-m="{{cell.m}}" data-d="{{cell.d}}" bindtap="onTapDay">
+          <text class="num">{{cell.d}}</text>
+          <view class="dots">
+            <view wx:if="{{cell.hasHist && mode === 'history'}}" class="dot dot-h"></view>
+            <view wx:if="{{cell.hasUp && mode === 'upcoming'}}" class="dot dot-u"></view>
+            <view wx:if="{{cell.hasNote}}" class="dot dot-n"></view>
+          </view>
+        </view>
+      </view>
+    </swiper-item>
+  </swiper>
+
+  <!-- 整月无数据时的提示，避免用户以为漏抓了什么 -->
+  <view class="nodata" wx:if="{{slots[swiperIndex].noData}}">
+    <text>{{year}}年{{month}}月 暂无收录 · 数据覆盖 {{yearRange}}</text>
+  </view>
+
+  <!-- 详情面板 -->
+  <scroll-view class="panel" scroll-y enable-flex>
+
+    <!-- ============ 历史回顾 ============ -->
+    <block wx:if="{{mode === 'history'}}">
+      <view class="ph">
+        <text class="ph-d">{{selLabel}}</text>
+        <text class="ph-w">{{selWeek}}</text>
+      </view>
+
+      <!-- 财经日历：当天全部发布项（密度来源，对标东财日历） -->
+      <view class="card cal" wx:if="{{hist.c.length}}">
+        <view class="card-title">
+          <text>财经日历</text>
+          <text class="src">{{hist.calTotal}} 项{{hist.calValCount ? ' · 已公布 ' + hist.calValCount : ''}}</text>
+        </view>
+
+        <!-- 过滤：默认只看重点，避免被展会/细项淹没。全是 ★ 级时不显示切换 -->
+        <view class="calf" wx:if="{{hist.calKeyCount}}">
+          <view class="calf-i {{calFilter === 'key' ? 'on' : ''}}" data-f="key" bindtap="setCalFilter">重点 {{hist.calKeyCount}}</view>
+          <view class="calf-i {{calFilter === 'all' ? 'on' : ''}}" data-f="all" bindtap="setCalFilter">全部 {{hist.calTotal}}</view>
+        </view>
+
+        <view class="ci c{{item.i}}{{item.anr ? ' anr' : ''}}"
+              wx:for="{{hist.c}}" wx:key="k"
+              style="animation-delay:{{item.anr && index < 18 ? index * 22 : 0}}ms">
+          <view class="ci-t">{{item.tm}}</view>
+          <view class="ci-bar"></view>
+          <view class="ci-b">
+            <view class="ci-h">
+              <text class="ci-n">{{item.n}}</text>
+              <text class="ci-pd" wx:if="{{item.pd}}">{{item.pd}}</text>
+            </view>
+            <view class="ci-m">
+              <text class="ci-co" wx:if="{{item.co}}">{{item.co}}</text>
+              <text class="ci-co" wx:if="{{item.kind === 1}}">事件</text>
+              <text class="ci-co" wx:elif="{{item.kind === 2}}">动态</text>
+              <text class="bias bias-{{item.biasCls}}" wx:if="{{item.bias}}">{{item.bias}}</text>
+            </view>
+            <view class="ci-v" wx:if="{{item.hasVal}}">
+              <text class="civ civ-a">{{item.a}}</text>
+              <text class="civ" wx:if="{{item.f}}">预期 {{item.f}}</text>
+              <text class="civ" wx:if="{{item.p}}">前值 {{item.p}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 关键数值（实际值 / 市场预期 / 前值）—— 已并入日历的指标不再重复 -->
+      <view class="card" wx:if="{{hist.v.length}}">
+        <view class="card-title">
+          <text>关键数值</text>
+          <text class="src">{{hist.v.length}} 项</text>
+        </view>
+        <view class="vrow" wx:for="{{hist.v}}" wx:key="k">
+          <view class="vhead">
+            <text class="stars {{item.hot ? 'hot' : ''}}">{{item.stars}}</text>
+            <text class="vname">{{item.n}}</text>
+            <text wx:if="{{item.bias}}" class="bias bias-{{item.biasCls}}">{{item.bias}}</text>
+          </view>
+          <view class="vgrid">
+            <view class="vcell">
+              <text class="vlab">实际</text>
+              <text class="vval {{item.hasActual ? 'vreal' : ''}}">{{item.a}}</text>
+            </view>
+            <block wx:if="{{!item.onlyActual}}">
+              <view class="vcell">
+                <text class="vlab">市场预期</text>
+                <text class="vval vsub">{{item.f}}</text>
+              </view>
+              <view class="vcell">
+                <text class="vlab">前值</text>
+                <text class="vval vsub">{{item.p}}</text>
+              </view>
+            </block>
+            <view class="vcell vnote" wx:else>
+              <text class="vlab">口径</text>
+              <text class="vval vsub vsmall">官方数据 · 无公开预期</text>
+            </view>
+          </view>
+          <view class="vextra" wx:if="{{item.y || item.m}}">
+            <text wx:if="{{item.y}}">{{item.y}}</text>
+            <text wx:if="{{item.m}}">{{item.m}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- A 股板块表现 -->
+      <view class="card" wx:if="{{hist.s}}">
+        <view class="card-title">
+          <text>A 股领涨 / 领跌板块</text>
+          <text class="src">实盘 {{hist.s.date}}</text>
+        </view>
+        <view class="two">
+          <view class="col">
+            <view class="col-t up">领涨</view>
+            <view class="bk" wx:for="{{hist.s.up}}" wx:key="n">
+              <text class="bk-n">{{item.n}}</text>
+              <text class="bk-p up">{{item.p}}</text>
+            </view>
+          </view>
+          <view class="col">
+            <view class="col-t down">领跌</view>
+            <view class="bk" wx:for="{{hist.s.down}}" wx:key="n">
+              <text class="bk-n">{{item.n}}</text>
+              <text class="bk-p down">{{item.p}}</text>
+            </view>
+          </view>
+        </view>
+        <view class="breadth">当日 {{hist.s.bt}} 个板块 · <text class="up">{{hist.s.br}} 涨</text> / <text class="down">{{hist.s.bf}} 跌</text></view>
+      </view>
+
+      <!-- 这一天发生的大事件 -->
+      <view class="card" wx:if="{{hist.e.length}}">
+        <view class="card-title">
+          <text>这一天发生的大事件</text>
+          <text class="src">{{hist.e.length}} 条</text>
+        </view>
+        <view class="row" wx:for="{{hist.e}}" wx:key="t">
+          <view class="ev">
+            <view class="ev-h">
+              <text class="tag {{item.cls}}">{{item.label}}</text>
+              <text class="ev-t">{{item.t}}</text>
+            </view>
+            <view class="ev-d">{{item.d}}</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- B 站 UP 主观点（当天视频的转写要点） -->
+      <view class="card" wx:for="{{hist.ups}}" wx:for-item="up" wx:key="k">
+        <view class="card-title">
+          <text>UP 主观点 · {{up.n}}</text>
+          <text class="src">转写提炼</text>
+        </view>
+        <view class="up-t">{{up.t}}</view>
+        <view class="up-pt" wx:for="{{up.pts}}" wx:for-item="pt" wx:key="*this">
+          <text class="up-dot">·</text>
+          <text class="up-tx">{{pt}}</text>
+        </view>
+        <view class="up-link" data-url="{{up.url}}" bindtap="openVideo">在 B 站看原视频 ›</view>
+      </view>
+
+      <view class="empty" wx:if="{{hist.empty}}">
+        <text>{{selYmdText}} 暂无收录</text>
+        <text class="empty-sub">这一天没有发布重要数据，也没有收录到重大事件</text>
+      </view>
+    </block>
+
+    <!-- ============ 未来预告 ============ -->
+    <block wx:if="{{mode === 'upcoming'}}">
+      <view class="ph">
+        <text class="ph-d">{{selLabel}}</text>
+        <text class="ph-w">{{selWeek}} · 当日预告</text>
+      </view>
+
+      <view class="card" wx:if="{{up.length}}">
+        <view class="card-title">
+          <text>当日事件</text>
+          <text class="src">{{up.length}} 条</text>
+        </view>
+        <view class="row" wx:for="{{up}}" wx:key="t">
+          <view class="ev">
+            <view class="ev-h">
+              <text class="tag {{item.cls}}">{{item.label}}</text>
+              <text class="conf {{item.confCls}}">{{item.confLabel}}</text>
+              <text class="ev-t">{{item.t}}</text>
+            </view>
+            <view class="ev-d">{{item.d}}</view>
+            <view class="vanchor" wx:if="{{item.v}}">
+              <block wx:if="{{item.v.hasF}}">
+                <text class="va-lab">市场预期</text>
+                <text class="va-val va-fc">{{item.v.ftxt}}</text>
+              </block>
+              <block wx:if="{{item.v.hasA}}">
+                <text class="va-lab">{{item.v.hasF ? '上次' : '上次'}}</text>
+                <text class="va-val">{{item.v.txt}}</text>
+                <text class="va-src">{{item.v.n}} · {{item.v.date}}</text>
+              </block>
+              <text class="va-prev" wx:if="{{item.v.prev}}">前值 {{item.v.prev}}</text>
+              <text class="va-exp" wx:if="{{item.v.y}}">{{item.v.y}}</text>
+              <text class="va-exp" wx:if="{{item.v.m}}">{{item.v.m}}</text>
+              <text class="va-wait" wx:if="{{!item.v.hasF}}">本期市场预期待云端同步</text>
+            </view>
+            <view class="ev-m"><text class="tm">{{item.tm}}</text> · <text class="cd">{{item.cd}}</text></view>
+          </view>
+        </view>
+      </view>
+
+      <view class="empty" wx:if="{{!up.length}}">
+        <text>这一天暂无预告事件</text>
+      </view>
+
+      <view class="card">
+        <view class="card-title">
+          <text>未来 {{horizon}} 天重点日程</text>
+          <text class="src">{{upcomingList.length}} 天有事件</text>
+        </view>
+        <block wx:for="{{upcomingList}}" wx:key="date">
+          <view class="dsep">
+            <text class="dsep-d">{{item.date}}</text>
+            <text class="dsep-w">{{item.week}}</text>
+            <text class="dsep-c">{{item.cd}}</text>
+          </view>
+          <view class="row" wx:for="{{item.items}}" wx:for-item="ev" wx:key="t">
+            <view class="ev">
+              <view class="ev-h">
+                <text class="tag {{ev.cls}}">{{ev.label}}</text>
+                <text class="conf {{ev.confCls}}">{{ev.confLabel}}</text>
+                <text class="ev-t">{{ev.t}}</text>
+              </view>
+              <view class="ev-d">{{ev.d}}</view>
+              <view class="ev-m"><text class="tm">{{ev.tm}}</text></view>
+            </view>
+          </view>
+        </block>
+      </view>
+    </block>
+
+    <!-- ============ 我的笔记（两种模式都显示）============ -->
+    <view class="card">
+      <view class="card-title">
+        <text>我的笔记</text>
+        <text class="addnote" bindtap="addNote">＋ 写点想法</text>
+      </view>
+
+      <view class="nrow" wx:for="{{notes}}" wx:key="id" data-id="{{item.id}}" bindtap="openNote">
+        <view class="nh">
+          <text class="ntime">{{item.time}}</text>
+          <text class="ntag" wx:for="{{item.tags}}" wx:for-item="tg" wx:key="*this">{{tg}}</text>
+        </view>
+        <view class="ntext">{{item.text}}</view>
+      </view>
+
+      <view class="nempty" wx:if="{{!notes.length}}">
+        <text>这一天还没有笔记，点右上角记录你的想法</text>
+      </view>
+    </view>
+
+    <view class="foot safe-bottom">
+      <text class="foot-t" bindtap="goAbout">数据来源与更新说明 ›</text>
+    </view>
+  </scroll-view>
+</view>

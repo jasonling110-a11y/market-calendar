@@ -1,0 +1,22 @@
+{
+  "pages": [
+    "pages/calendar/calendar",
+    "pages/notes/notes",
+    "pages/note/note",
+    "pages/about/about"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#000000",
+    "navigationBarTitleText": "市场日历",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#000000",
+    "backgroundTextStyle": "light",
+    "enablePullDownRefresh": false
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents",
+  "usingComponents": true,
+  "requiredPrivateInfos": [],
+  "permission": {}
+}

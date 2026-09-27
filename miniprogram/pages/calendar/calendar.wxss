@@ -1,0 +1,533 @@
+/* pages/calendar/calendar.wxss */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--c-bg);
+}
+
+/* ---------- 顶部 ---------- */
+.hdr {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 16rpx 28rpx 8rpx;
+}
+.hdr-l { display: flex; flex-direction: column; }
+.m-title {
+  font-size: 44rpx;
+  font-weight: 700;
+  color: var(--c-accent);
+  letter-spacing: 1rpx;
+}
+.m-sub { font-size: 20rpx; color: var(--c-text-3); margin-top: 4rpx; }
+.hdr-r { display: flex; align-items: center; }
+.nav {
+  width: 52rpx; height: 52rpx;
+  line-height: 48rpx; text-align: center;
+  font-size: 36rpx; color: var(--c-text-2);
+  background: var(--c-surface-2);
+  border-radius: 50%;
+  margin-left: 12rpx;
+}
+.today {
+  padding: 0 22rpx; height: 52rpx; line-height: 52rpx;
+  font-size: 24rpx; color: var(--c-text);
+  background: var(--c-surface-2);
+  border-radius: 26rpx;
+  margin-left: 12rpx;
+}
+
+/* ---------- 模式切换 ---------- */
+.seg {
+  display: flex;
+  margin: 16rpx 28rpx 8rpx;
+  background: var(--c-surface-2);
+  border-radius: 12rpx;
+  padding: 4rpx;
+}
+.seg-i {
+  flex: 1;
+  text-align: center;
+  height: 60rpx; line-height: 60rpx;
+  font-size: 26rpx;
+  color: var(--c-text-2);
+  border-radius: 10rpx;
+  transition: all .18s;
+}
+.seg-i.on {
+  background: #3a3a3c;
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+/* ---------- 星期 ---------- */
+.wk {
+  display: flex;
+  padding: 8rpx 12rpx 4rpx;
+}
+.wk-i {
+  flex: 1;
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--c-text-3);
+}
+
+/* ---------- 月视图 ---------- */
+.sw { height: 600rpx; flex-shrink: 0; }
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 4rpx 12rpx;
+}
+.cell {
+  width: 14.2857%;
+  height: 94rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.num {
+  width: 58rpx; height: 58rpx;
+  line-height: 58rpx;
+  text-align: center;
+  font-size: 30rpx;
+  border-radius: 50%;
+  color: var(--c-text);
+}
+.cell.dim .num { color: #4a4a4c; }
+.cell.today .num {
+  background: var(--c-accent);
+  color: #fff;
+  font-weight: 600;
+}
+.cell.sel .num {
+  background: #3a3a3c;
+  color: #fff;
+}
+.cell.today.sel .num {
+  background: var(--c-accent);
+  box-shadow: 0 0 0 4rpx rgba(255, 59, 48, .3);
+}
+.dots {
+  height: 10rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2rpx;
+}
+.dot {
+  width: 8rpx; height: 8rpx;
+  border-radius: 50%;
+  margin: 0 3rpx;
+}
+.dot-h { background: #8e8e93; }
+.dot-u { background: var(--c-warn); }
+.dot-n { background: var(--c-info); }
+
+/* 笔记入口 */
+.notes-entry {
+  padding: 0 20rpx; height: 52rpx; line-height: 52rpx;
+  font-size: 24rpx; color: #6cb6ff;
+  background: rgba(10, 132, 255, .14);
+  border-radius: 26rpx;
+  margin-left: 12rpx;
+}
+
+/* ---------- 详情面板 ---------- */
+.panel {
+  flex: 1;
+  padding-bottom: 40rpx;
+  background: var(--c-bg);
+  border-top: 1rpx solid var(--c-separator);
+}
+.ph {
+  padding: 24rpx 28rpx 8rpx;
+  display: flex;
+  align-items: baseline;
+}
+.ph-d { font-size: 32rpx; font-weight: 600; color: var(--c-text); }
+.ph-w { font-size: 22rpx; color: var(--c-text-2); margin-left: 14rpx; }
+
+.src { font-size: 20rpx; color: var(--c-text-3); }
+
+/* 板块双列 */
+.two { display: flex; }
+.col { flex: 1; }
+.col + .col { margin-left: 20rpx; }
+.col-t {
+  font-size: 22rpx;
+  color: var(--c-text-2);
+  padding-bottom: 10rpx;
+  border-bottom: 1rpx solid var(--c-separator);
+  margin-bottom: 8rpx;
+}
+.col-t.up { color: var(--c-up); }
+.col-t.down { color: var(--c-down); }
+.bk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8rpx 0;
+}
+.bk-n {
+  font-size: 24rpx;
+  color: var(--c-text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 10rpx;
+}
+.bk-p { font-size: 24rpx; font-variant-numeric: tabular-nums; }
+.up { color: var(--c-up); }
+.down { color: var(--c-down); }
+.breadth {
+  margin-top: 16rpx;
+  padding-top: 14rpx;
+  border-top: 1rpx solid var(--c-separator);
+  font-size: 22rpx;
+  color: var(--c-text-2);
+  text-align: center;
+}
+
+/* ---------- 数值：实际 / 预期 / 前值 ---------- */
+.vrow {
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid var(--c-separator);
+}
+.vrow:last-child { border-bottom: none; }
+.vhead {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+.vdate {
+  font-size: 22rpx;
+  color: var(--c-text-3);
+  font-variant-numeric: tabular-nums;
+  margin-right: 14rpx;
+  flex-shrink: 0;
+}
+.vname {
+  font-size: 27rpx;
+  color: var(--c-text);
+  font-weight: 500;
+  flex: 1;
+}
+/* 重要度：★★★ 高价值数据用暖色点亮，方便在一天十几项里一眼定位 */
+.stars {
+  font-size: 19rpx;
+  color: #4a4a4c;
+  margin-right: 10rpx;
+  letter-spacing: -2rpx;
+  flex-shrink: 0;
+}
+.stars.hot { color: var(--c-warn); }
+
+/* 偏离中性表述：不用红绿，避免与板块涨跌混淆 */
+.bias {
+  font-size: 20rpx;
+  padding: 2rpx 12rpx;
+  border-radius: 6rpx;
+  flex-shrink: 0;
+}
+.bias-up { color: #ff9f0a; background: rgba(255, 159, 10, .14); }
+.bias-down { color: #64d2ff; background: rgba(100, 210, 255, .14); }
+.bias-flat { color: var(--c-text-2); background: rgba(142, 142, 147, .16); }
+
+.vgrid { display: flex; }
+.vcell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.vlab {
+  font-size: 20rpx;
+  color: var(--c-text-3);
+  margin-bottom: 4rpx;
+}
+.vval {
+  font-size: 30rpx;
+  color: var(--c-text-2);
+  font-variant-numeric: tabular-nums;
+}
+.vval.vreal {
+  color: var(--c-text);
+  font-weight: 600;
+  font-size: 34rpx;
+}
+.vval.vsub { font-size: 27rpx; }
+.vsmall { font-size: 22rpx; color: var(--c-text-3); font-weight: 400; }
+.vextra {
+  display: flex;
+  margin-top: 10rpx;
+  font-size: 21rpx;
+  color: var(--c-text-3);
+}
+.vextra text { margin-right: 20rpx; }
+
+/* 未来事件的「上次值」锚点 */
+.vanchor {
+  margin-top: 10rpx;
+  padding: 14rpx 16rpx;
+  background: var(--c-surface-2);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.va-lab { font-size: 20rpx; color: var(--c-text-3); margin-right: 8rpx; }
+.va-val {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--c-text);
+  font-variant-numeric: tabular-nums;
+  margin-right: 12rpx;
+}
+.va-src { font-size: 20rpx; color: var(--c-text-3); }
+.va-prev { font-size: 20rpx; color: var(--c-text-2); margin-left: 12rpx; }
+.va-exp { font-size: 20rpx; color: var(--c-text-2); margin-left: 12rpx; }
+.va-wait {
+  font-size: 19rpx;
+  color: var(--c-warn);
+  margin-left: auto;
+}
+/* 本期市场预期：数据源已给出时高亮，与"上次实际值"区分开 */
+.va-fc {
+  color: var(--c-warn);
+  margin-right: 18rpx;
+}
+
+/* 事件条目 */
+.ev { flex: 1; }
+.ev-h {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 6rpx;
+}
+.ev-y {
+  font-size: 22rpx;
+  color: var(--c-text-3);
+  margin-right: 10rpx;
+  font-variant-numeric: tabular-nums;
+}
+.ev-t {
+  font-size: 28rpx;
+  color: var(--c-text);
+  font-weight: 500;
+  flex: 1;
+}
+.ev-d {
+  font-size: 24rpx;
+  color: var(--c-text-2);
+  line-height: 36rpx;
+}
+.ev-m { margin-top: 8rpx; font-size: 22rpx; color: var(--c-text-3); }
+.tm { color: var(--c-text-2); font-variant-numeric: tabular-nums; }
+.cd { color: var(--c-warn); }
+
+/* 日期分隔 */
+.dsep {
+  display: flex;
+  align-items: baseline;
+  padding: 20rpx 0 8rpx;
+  border-top: 1rpx solid var(--c-separator);
+}
+.dsep-d { font-size: 26rpx; font-weight: 600; color: var(--c-text); font-variant-numeric: tabular-nums; }
+.dsep-w { font-size: 22rpx; color: var(--c-text-2); margin-left: 12rpx; }
+.dsep-c { font-size: 22rpx; color: var(--c-warn); margin-left: auto; }
+
+/* 整月无收录 */
+.nodata {
+  padding: 6rpx 28rpx 10rpx;
+  font-size: 21rpx;
+  color: var(--c-text-3);
+  text-align: center;
+}
+
+/* ============ 财经日历（时间轴样式） ============ */
+/* 设计要点：左侧时间列对齐（tabular-nums 防止数字跳动）+ 色条表达重要度，
+   不写「★★★」文字——星级在密集列表里会变成视觉噪音 */
+.cal { padding-bottom: 12rpx; }
+
+.calf {
+  display: flex;
+  background: var(--c-surface-2);
+  border-radius: 10rpx;
+  padding: 4rpx;
+  margin-bottom: 14rpx;
+}
+.calf-i {
+  flex: 1;
+  text-align: center;
+  height: 52rpx;
+  line-height: 52rpx;
+  font-size: 23rpx;
+  color: var(--c-text-2);
+  border-radius: 8rpx;
+  transition: background .22s ease, color .22s ease;
+}
+.calf-i.on {
+  background: #3a3a3c;
+  color: var(--c-text);
+  font-weight: 500;
+}
+
+.ci {
+  display: flex;
+  align-items: stretch;
+  padding: 12rpx 0;
+}
+.ci + .ci { border-top: 1rpx solid rgba(56, 56, 58, .5); }
+
+.ci-t {
+  width: 78rpx;
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: var(--c-text-3);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.5rpx;
+  padding-top: 4rpx;
+}
+/* 重要度色条：暖橙=关键读数 / 蓝=重要 / 灰=参考 */
+.ci-bar {
+  width: 5rpx;
+  border-radius: 3rpx;
+  margin: 8rpx 16rpx 8rpx 0;
+  flex-shrink: 0;
+  background: #48484a;
+  transition: background .2s;
+}
+.ci.c3 .ci-bar { background: #ff9f0a; }
+.ci.c2 .ci-bar { background: #0a84ff; }
+
+.ci-b { flex: 1; min-width: 0; }
+.ci-h { display: flex; align-items: baseline; }
+.ci-n {
+  font-size: 26rpx;
+  color: var(--c-text);
+  line-height: 36rpx;
+  flex: 1;
+  word-break: break-all;
+}
+.ci.c1 .ci-n { color: var(--c-text-2); }        /* 低重要度整体压暗，弱化存在感 */
+.ci-pd {
+  font-size: 19rpx;
+  color: var(--c-text-3);
+  margin-left: 10rpx;
+  flex-shrink: 0;
+}
+.ci-m { display: flex; align-items: center; margin-top: 4rpx; flex-wrap: wrap; }
+.ci-co {
+  font-size: 19rpx;
+  color: var(--c-text-3);
+  background: rgba(255, 255, 255, .07);
+  padding: 1rpx 10rpx;
+  border-radius: 5rpx;
+  margin-right: 8rpx;
+}
+.ci-v { display: flex; align-items: baseline; margin-top: 8rpx; flex-wrap: wrap; }
+.civ {
+  font-size: 23rpx;
+  color: var(--c-text-2);
+  margin-right: 18rpx;
+  font-variant-numeric: tabular-nums;
+}
+.civ-a { color: var(--c-warn); font-weight: 600; font-size: 26rpx; }
+
+/* 入场动画：淡入 + 轻微上移。只给前 18 条，避免长列表掉帧 */
+@keyframes ciIn {
+  from { opacity: 0; transform: translateY(16rpx); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ci.anr { animation: ciIn .34s cubic-bezier(.22, .68, .36, 1) both; }
+
+/* B 站 UP 主观点（转写提炼的要点） */
+.up-t {
+  font-size: 25rpx;
+  color: var(--c-text-2);
+  padding-bottom: 12rpx;
+  margin-bottom: 10rpx;
+  border-bottom: 1rpx solid var(--c-separator);
+}
+.up-pt {
+  display: flex;
+  padding: 6rpx 0;
+}
+.up-dot {
+  font-size: 25rpx;
+  color: var(--c-text-3);
+  margin-right: 12rpx;
+  flex-shrink: 0;
+  line-height: 38rpx;
+}
+.up-tx {
+  font-size: 25rpx;
+  color: var(--c-text);
+  line-height: 38rpx;
+  flex: 1;
+}
+.up-link {
+  margin-top: 14rpx;
+  padding-top: 12rpx;
+  border-top: 1rpx solid var(--c-separator);
+  font-size: 22rpx;
+  color: #3b9cff;
+  text-align: right;
+}
+
+/* 空态 */
+.empty {
+  padding: 70rpx 40rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--c-text-3);
+  display: flex;
+  flex-direction: column;
+}
+.empty-sub {
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: #4a4a4c;
+}
+
+/* 笔记条目 */
+.addnote { font-size: 24rpx; color: var(--c-info); }
+.nrow {
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid var(--c-separator);
+}
+.nrow:last-of-type { border-bottom: none; }
+.nh { display: flex; align-items: center; margin-bottom: 6rpx; }
+.ntime {
+  font-size: 20rpx;
+  color: var(--c-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.ntag {
+  font-size: 18rpx;
+  color: #6cb6ff;
+  background: rgba(10, 132, 255, .14);
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  margin-left: 12rpx;
+}
+.ntext {
+  font-size: 26rpx;
+  color: var(--c-text);
+  line-height: 40rpx;
+  word-break: break-all;
+}
+.nempty {
+  padding: 24rpx 0 8rpx;
+  font-size: 23rpx;
+  color: var(--c-text-3);
+  text-align: center;
+}
+
+.foot { padding: 30rpx 0 10rpx; text-align: center; }
+.foot-t { font-size: 24rpx; color: var(--c-info); }

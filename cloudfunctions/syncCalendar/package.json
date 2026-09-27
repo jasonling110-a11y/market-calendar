@@ -1,0 +1,9 @@
+{
+  "name": "syncCalendar",
+  "version": "1.0.0",
+  "description": "资本市场日历增量同步（板块行情抓取 + 预告下发）",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

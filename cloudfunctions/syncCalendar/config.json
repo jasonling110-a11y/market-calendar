@@ -1,0 +1,14 @@
+{
+  "triggers": [
+    {
+      "name": "morningUS",
+      "type": "timer",
+      "config": "0 0 8 * * * *"
+    },
+    {
+      "name": "dailyAfterClose",
+      "type": "timer",
+      "config": "0 0 18 * * * *"
+    }
+  ]
+}

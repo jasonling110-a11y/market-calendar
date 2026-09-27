@@ -1,0 +1,82 @@
+/* pages/note/note.wxss */
+.wrap {
+  min-height: 100vh;
+  background: var(--c-bg);
+  display: flex;
+  flex-direction: column;
+  padding: 0 24rpx;
+}
+.datebar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 24rpx 4rpx 14rpx;
+}
+.dl { font-size: 32rpx; font-weight: 600; color: var(--c-text); }
+.dt { font-size: 22rpx; color: var(--c-text-3); }
+
+.editor {
+  background: var(--c-surface);
+  border-radius: var(--radius);
+  padding: 20rpx;
+  position: relative;
+}
+.ta {
+  width: 100%;
+  height: 380rpx;
+  font-size: 28rpx;
+  line-height: 44rpx;
+  color: var(--c-text);
+  background: transparent;
+}
+.ph { color: var(--c-text-3); }
+.count {
+  text-align: right;
+  font-size: 20rpx;
+  color: var(--c-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.tagwrap { margin-top: 28rpx; padding: 0 4rpx; }
+.tagtitle { font-size: 24rpx; color: var(--c-text-2); margin-bottom: 16rpx; }
+.chips { display: flex; flex-wrap: wrap; }
+.chip {
+  padding: 10rpx 28rpx;
+  font-size: 25rpx;
+  color: var(--c-text-2);
+  background: var(--c-surface);
+  border: 1rpx solid var(--c-separator);
+  border-radius: 999rpx;
+  margin: 0 16rpx 16rpx 0;
+}
+.chip.on {
+  color: #fff;
+  background: var(--c-info);
+  border-color: var(--c-info);
+}
+
+.actions {
+  display: flex;
+  margin-top: auto;
+  padding: 30rpx 0 30rpx;
+}
+.btn {
+  flex: 1;
+  height: 88rpx;
+  line-height: 88rpx;
+  text-align: center;
+  border-radius: 14rpx;
+  font-size: 30rpx;
+}
+.btn.save {
+  background: var(--c-info);
+  color: #fff;
+  font-weight: 600;
+}
+.btn.save.off { opacity: .4; }
+.btn.del {
+  flex: 0 0 220rpx;
+  margin-right: 20rpx;
+  background: var(--c-surface);
+  color: var(--c-up);
+}

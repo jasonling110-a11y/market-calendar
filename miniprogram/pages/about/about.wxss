@@ -1,0 +1,28 @@
+/* pages/about/about.wxss */
+.wrap {
+  min-height: 100vh;
+  padding: 24rpx 0 40rpx;
+  background: var(--c-bg);
+}
+.line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid var(--c-separator);
+}
+.line:last-child { border-bottom: none; }
+.k { font-size: 26rpx; color: var(--c-text-2); }
+.v { font-size: 26rpx; color: var(--c-text); font-variant-numeric: tabular-nums; }
+.row { padding: 16rpx 0; border-bottom: 1rpx solid var(--c-separator); }
+.row:last-child { border-bottom: none; }
+.ev-h { display: flex; align-items: center; margin-bottom: 6rpx; }
+.ev-t { font-size: 28rpx; color: var(--c-text); font-weight: 500; margin-right: 12rpx; }
+.ev-d { font-size: 24rpx; color: var(--c-text-2); line-height: 38rpx; }
+.disc {
+  margin: 10rpx 40rpx 0;
+  font-size: 22rpx;
+  color: var(--c-text-3);
+  line-height: 36rpx;
+  text-align: center;
+}

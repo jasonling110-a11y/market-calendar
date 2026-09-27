@@ -1,0 +1,34 @@
+<!-- pages/note/note.wxml -->
+<view class="wrap">
+  <view class="datebar">
+    <text class="dl">{{dateLabel}}</text>
+    <text class="dt">{{isEdit ? '编辑' : '新建'}}</text>
+  </view>
+
+  <view class="editor">
+    <textarea class="ta"
+      value="{{text}}"
+      bindinput="onInput"
+      placeholder="这一天的想法、复盘、计划…"
+      placeholder-class="ph"
+      maxlength="{{maxLen}}"
+      show-confirm-bar="{{false}}"
+      auto-focus="{{!isEdit}}"
+      fixed="{{true}}" />
+    <view class="count">{{text.length}}/{{maxLen}}</view>
+  </view>
+
+  <view class="tagwrap">
+    <view class="tagtitle">标签（可多选，也可不选）</view>
+    <view class="chips">
+      <view wx:for="{{tagList}}" wx:key="*this"
+            class="chip {{tags.indexOf(item) >= 0 ? 'on' : ''}}"
+            data-t="{{item}}" bindtap="toggleTag">{{item}}</view>
+    </view>
+  </view>
+
+  <view class="actions safe-bottom">
+    <view class="btn del" wx:if="{{isEdit}}" bindtap="onDelete">删除</view>
+    <view class="btn save {{canSave ? '' : 'off'}}" bindtap="onSave">{{isEdit ? '更新' : '保存'}}</view>
+  </view>
+</view>

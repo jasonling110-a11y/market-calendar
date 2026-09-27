@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>市场日历 · 订阅</title>
+<style>
+:root{color-scheme:dark}
+body{margin:0;padding:32px 22px;background:#000;color:#fff;
+ font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;line-height:1.6}
+h1{font-size:22px;margin:0 0 6px}
+.sub{color:#98989f;font-size:13px;margin-bottom:26px}
+.btn{display:block;text-align:center;padding:15px;border-radius:12px;
+ background:#0a84ff;color:#fff;font-size:16px;font-weight:600;
+ text-decoration:none;margin-bottom:12px}
+.btn.alt{background:#1c1c1e;color:#0a84ff;font-weight:500}
+ol{padding-left:20px;color:#c7c7cc;font-size:14px}
+li{margin-bottom:8px}
+.card{background:#1c1c1e;border-radius:12px;padding:16px;margin-top:22px;font-size:13px;color:#98989f}
+code{background:#2c2c2e;padding:2px 6px;border-radius:4px;font-size:12px;word-break:break-all}
+</style>
+</head>
+<body>
+  <h1>市场日历</h1>
+  <div class="sub">财经日历 · 央行议息 · UP 主观点　每日自动更新</div>
+
+  <a class="btn" id="sub" href="#">订阅到 iPhone 日历</a>
+  <a class="btn alt" id="raw" href="#">下载 .ics 文件（手动导入）</a>
+  <a class="btn alt" href="app.html">打开完整日历（网页版）</a>
+
+  <div class="card">
+    <b style="color:#c7c7cc">订阅后怎么刷新？</b>
+    <ol>
+      <li>iPhone：设置 → 日历 → 账户 → 获取新数据 → 拉到底，把「已订阅的日历」设为「每小时」</li>
+      <li>如果没自动更新：日历 App → 底部「日历」→ 下拉刷新</li>
+      <li>不想订阅了：设置 → 日历 → 账户 → 删除该订阅</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    订阅地址<br><code id="url"></code>
+  </div>
+
+  <div class="card">
+    <b style="color:#c7c7cc">如果「订阅」按钮没反应</b>
+    <ol>
+      <li>请在 <b>Safari</b> 里打开本页（微信内置浏览器不支持 webcal://）</li>
+      <li>或用上面的「下载 .ics 文件」，下载后点开 → 添加到日历</li>
+      <li>手动订阅：设置 → 日历 → 账户 → 添加账户 → 其他 → 添加已订阅的日历</li>
+    </ol>
+  </div>
+
+<script>
+// 用 URL 解析构造绝对地址：直接字符串拼接在「部署在根路径」时会算错
+var u = new URL('market-calendar.ics', location.href).href;
+document.getElementById('url').textContent = u;
+document.getElementById('raw').href = u;
+// webcal:// 直接唤起 iPhone 日历的「添加订阅」弹窗；
+// 这条路径下由 iOS 自己取文件，不受服务器 MIME 类型影响
+document.getElementById('sub').href = u.replace(/^https?:/, 'webcal:');
+</script>
+</body>
+</html>

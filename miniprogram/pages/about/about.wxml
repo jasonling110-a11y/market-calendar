@@ -1,0 +1,123 @@
+<view class="wrap">
+  <view class="card">
+    <view class="card-title">数据覆盖范围</view>
+    <view class="line"><text class="k">收录日期</text><text class="v">{{meta.stats.days}} 天</text></view>
+    <view class="line"><text class="k">年份跨度</text><text class="v">{{range}}</text></view>
+    <view class="line"><text class="k">重大事件</text><text class="v">{{meta.stats.events}} 条</text></view>
+    <view class="line"><text class="k">带真实数值</text><text class="v">{{meta.stats.macro_days}} 天 / {{meta.stats.macro_points}} 个数据点</text></view>
+    <view class="line"><text class="k">A 股板块行情</text><text class="v">{{meta.stats.sector_days}} 天</text></view>
+    <view class="line"><text class="k">行情区间</text><text class="v">{{sectorRange}}</text></view>
+    <view class="line" wx:if="{{meta.stats.cal_items}}"><text class="k">财经日历</text><text class="v">{{meta.stats.cal_items}} 条 / {{meta.stats.cal_days}} 天</text></view>
+    <view class="line" wx:if="{{meta.stats.up_videos}}"><text class="k">UP 主视频观点</text><text class="v">{{meta.stats.up_videos}} 个 / {{meta.stats.up_days}} 天</text></view>
+    <view class="line"><text class="k">未来预告</text><text class="v">{{meta.upcomingCount}} 天 / {{meta.upcomingEventCount}} 条</text></view>
+    <view class="line"><text class="k">数据版本</text><text class="v">{{meta.generatedAt}}</text></view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">财经日历说明</view>
+    <view class="ev-d">
+      选定某一天后，最先看到的是「财经日历」——这一天全球发布的经济数据、央行议息会议、
+      央行动态与发布会，按时间排列，时间精确到分钟。
+    </view>
+    <view class="ev-d" style="margin-top:14rpx">
+      左侧色条表示重要度：橙色为关键读数（CPI、非农、利率决议等），蓝色为重要数据，灰色为参考信息。
+      默认「重点」视图只显示蓝、橙两级——一个月两三百条里，真正影响定价的就是那几十条。
+    </view>
+    <view class="ev-d" style="margin-top:14rpx">
+      当某条数据已公布、且系统收录了真实数值时，会直接显示在那一行下方（实际 / 预期 / 前值）。
+      东财日历本身不提供数值，这些数值来自另外的数据源，两者按指标名对齐。
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">数值口径说明</view>
+    <view class="row">
+      <view class="ev">
+        <view class="ev-h"><text class="ev-t">实际 / 市场预期 / 前值</text></view>
+        <view class="ev-d">财经日历口径。覆盖美国 CPI、核心 CPI、非农、失业率、ISM、GDP、PPI、零售销售、初请、PCE，以及中国 CPI、GDP、贸易帐。均为真实公布值，非推算。</view>
+      </view>
+    </view>
+    <view class="row">
+      <view class="ev">
+        <view class="ev-h"><text class="ev-t">同比 / 环比</text></view>
+        <view class="ev-d">中国统计局口径（PMI、PPI、M2、社融、LPR）提供，此类数据无公开市场预期，界面会明确标注。</view>
+      </view>
+    </view>
+    <view class="row">
+      <view class="ev">
+        <view class="ev-h"><text class="ev-t">高于 / 低于预期</text></view>
+        <view class="ev-d">只做中性描述，不判断利好利空——同方向的偏离对 CPI 与失业率含义相反。颜色刻意避开红绿，避免与板块涨跌混淆。</view>
+      </view>
+    </view>
+    <view class="row">
+      <view class="ev">
+        <view class="ev-h"><text class="ev-t">本期市场预期待云端同步</text></view>
+        <view class="ev-d">当前公开数据源的预期值更新至 2025-09。云函数已接好金十数据中心接口，数据源更新后会自动填充，无需改代码。</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">三档置信度</view>
+    <view class="row">
+      <view class="ev">
+        <view class="ev-h"><text class="conf conf-confirmed">已官宣</text></view>
+        <view class="ev-d">官方已正式公布日期，例如美联储 FOMC 会议日程。</view>
+      </view>
+    </view>
+    <view class="row">
+      <view class="ev">
+        <view class="ev-h"><text class="conf conf-estimated">规律推算</text></view>
+        <view class="ev-d">按固定发布规律推算，例如非农为每月第一个周五、LPR 为每月 20 日。</view>
+      </view>
+    </view>
+    <view class="row">
+      <view class="ev">
+        <view class="ev-h"><text class="conf conf-rumored">待官宣</text></view>
+        <view class="ev-d">市场普遍预期但尚未官宣的档期，例如各厂商秋季发布会，仅供参考。</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">中国数据发布节奏</view>
+    <view class="row" wx:for="{{cadence.cn}}" wx:key="n">
+      <view class="ev">
+        <view class="ev-h"><text class="ev-t">{{item.n}}</text><text class="tag tag-cn">{{item.t}}</text></view>
+        <view class="ev-d">{{item.d}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">美国数据发布节奏</view>
+    <view class="row" wx:for="{{cadence.us}}" wx:key="n">
+      <view class="ev">
+        <view class="ev-h"><text class="ev-t">{{item.n}}</text><text class="tag tag-us">{{item.t}}</text></view>
+        <view class="ev-d">{{item.d}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">更新机制</view>
+    <view class="ev-d">
+      主包内置离线数据包，断网可用。若配置了云开发环境，云函数 syncCalendar 会在收盘后抓取当日板块行情并下发增量事件，客户端合并后写入本地缓存。
+      未配置云环境时完全离线运行，功能不受影响。
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">UP 主视频观点是怎么来的</view>
+    <view class="ev-d">
+      选取某一天，面板底部会显示当日发布的视频要点。这些要点由「下载音频 → 本地语音转写 → 提炼核心结论」得到。
+    </view>
+    <view class="ev-d" style="margin-top:14rpx">
+      之所以不直接抓字幕：该 UP 主的视频没有上传字幕、简介为空，B 站自带摘要接口需要登录。语音转写可能带来同音错别字，要点已按上下文校正，但如与原视频有出入，请以原视频为准——面板内保留了原视频链接。
+    </view>
+  </view>
+
+  <view class="disc safe-bottom">
+    本小程序仅用于信息整理与复盘参考，所有数据来自公开渠道，不构成任何投资建议。行情与日程请以官方发布为准。
+  </view>
+</view>

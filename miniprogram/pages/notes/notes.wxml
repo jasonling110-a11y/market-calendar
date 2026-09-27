@@ -1,0 +1,49 @@
+<!-- pages/notes/notes.wxml —— 我的笔记汇总 -->
+<view class="wrap">
+
+  <view class="searchbar">
+    <input class="si"
+      value="{{keyword}}"
+      bindinput="onSearch"
+      placeholder="搜索笔记内容"
+      placeholder-class="ph"
+      confirm-type="search" />
+    <view class="clear" wx:if="{{keyword}}" bindtap="clearSearch">✕</view>
+  </view>
+
+  <view class="filter">
+    <view class="fchip {{tag === '' ? 'on' : ''}}" data-t="" bindtap="pickTag">全部</view>
+    <view wx:for="{{tagList}}" wx:key="*this"
+          class="fchip {{tag === item ? 'on' : ''}}"
+          data-t="{{item}}" bindtap="pickTag">{{item}}</view>
+  </view>
+
+  <view class="stat">
+    <text>共 {{total}} 条{{tag ? ' · ' + tag : ''}}{{keyword ? ' · 命中 ' + shown : ''}}</text>
+    <view class="sync {{syncing ? 'busy' : ''}}" bindtap="onSync">{{syncText}}</view>
+  </view>
+
+  <scroll-view class="list" scroll-y>
+    <view class="item" wx:for="{{list}}" wx:key="id" data-id="{{item.id}}" bindtap="openNote">
+      <view class="ih">
+        <text class="idate">{{item.dateLabel}}</text>
+        <text class="iweek">{{item.week}}</text>
+        <view class="itags">
+          <text class="itag" wx:for="{{item.tags}}" wx:for-item="tg" wx:key="*this">{{tg}}</text>
+        </view>
+        <text class="itime">{{item.time}}</text>
+      </view>
+      <view class="itext">{{item.brief}}</view>
+    </view>
+
+    <view class="empty" wx:if="{{!list.length}}">
+      <text wx:if="{{keyword || tag}}">没有匹配的笔记</text>
+      <block wx:else>
+        <text>还没有笔记</text>
+        <text class="esub">在日历里选一天，点「写点想法」记录你的思考</text>
+      </block>
+    </view>
+  </scroll-view>
+
+  <view class="fab" bindtap="addNote">＋</view>
+</view>

@@ -1,0 +1,26 @@
+# ---- 系统 / 编辑器 ----
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+*.pyo
+.idea/
+.vscode/
+
+# ---- 数据缓存里体积大且无价值的 ----
+# 音频文件是 B 站转写的中间产物，单个几 MB，转写完就没用了
+tools/data/audio/
+# 东财限流前的中间备份，已被 sector_daily.json 取代
+tools/data/sector_daily_raw_backup.json
+tools/data/_pending.json
+
+# ---- 凭据（绝对不要提交）----
+# PushPlus token 等同推送权限，配置放在 ~/.market-calendar.push.json（仓库之外）
+tools/.pushplus.json
+.pushplus.json
+
+# ---- 已废弃的输出目录（改用 docs/）----
+dist/
+
+# ---- 小程序私有配置 ----
+miniprogram/project.private.config.json
