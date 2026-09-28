@@ -355,9 +355,13 @@ def build_history(sector):
     # 3) A 股板块：精确交易日
     for ymd, v in sector_by_ymd.items():
         up = [{"n": x["name"], "p": x["pct"]}
-              for x in v["up"] if not is_noise(x["name"])][:5]
+              for x in v["up"] if not is_noise(x["name"])]
+        up = sorted(up, key=lambda x: -x["p"])[:5]        # 最涨在前
         down = [{"n": x["name"], "p": x["pct"]}
-                for x in v["down"] if not is_noise(x["name"])][:5]
+                for x in v["down"] if not is_noise(x["name"])]
+        # 必须显式按涨幅升序重排：历史存量里 down 是「跌幅从小到大」存的，
+        # 直接 [:5] 会把最跌的板块截掉（实测 9-28 最跌的通信 -7.36% 就被丢了）
+        down = sorted(down, key=lambda x: x["p"])[:5]
         if not up and not down:
             continue
         touch(ymd)["s"] = {
