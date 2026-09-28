@@ -173,14 +173,29 @@ CAL_TOPIC = re.compile(
     r"GDP|CPI|PPI|PMI|非农|关税")
 
 
+# 五大资本市场之外的发布主体：加拿大/澳洲/巴西/俄罗斯/瑞士/新加坡的数据
+# （合计 500+ 条）不在关注范围，按国家字段直接剔除。
+# 中国香港/澳门/台湾同属中国资本市场，保留。
+CAL_KEEP_CITY = {
+    "美国", "中国", "中国香港", "中国澳门", "中国台湾", "香港", "澳门",
+    "欧盟", "欧元区", "英国", "德国", "法国", "意大利", "西班牙", "荷兰",
+    "比利时", "奥地利", "芬兰", "爱尔兰", "葡萄牙", "希腊", "卢森堡",
+    "日本", "韩国",
+}
+
+
 def _cal_keep(country, name, kind):
     """财经日历条目是否保留。kind: 0=数据 1=事件 2=动态
 
-    kind=0 的宏观数据一律保留；kind=1/2 是东财的「事件 / 动态」，
-    里面混了大量展会、招商、漫展、产品首发、国事访问，必须靠话题闸门筛。
+    kind=0 是经济数据，按发布主体所在市场过滤（五大市场之外不要）；
+    kind=1/2 是东财的「事件 / 动态」，里面混了大量展会、招商、漫展、
+    产品首发、国事访问，必须靠话题闸门筛。
     """
     if kind in (0, None):
-        return True
+        c = (country or "").strip()
+        if not c:
+            return True        # 没标主体的数据不误杀
+        return c in CAL_KEEP_CITY
     n = name or ""
     if CAL_JUNK.search(n):
         return False
@@ -486,6 +501,34 @@ def build_upcoming():
     return out
 
 
+def compact_cal_dicts(days):
+    """财经日历的两张字典表按「实际被引用」裁剪。
+
+    源表来自全量抓取（含已被 _cal_keep 过滤掉的展会/国事访问等条目），
+    过滤后 2809 个名字里只有 600+ 个真被引用，其余是纯占体积的死数据
+    （小程序主包按字节计费，网页端也一样要下载）。
+    做法：扫一遍真正用到的索引，重建紧凑表，再把 days 里的索引改写过去。
+    """
+    used_c, used_n = {}, {}
+    for v in days.values():
+        for row in (v.get("c") or []):
+            used_c[row[1]] = used_c.get(row[1], 0) + 1
+            used_n[row[2]] = used_n.get(row[2], 0) + 1
+    # 按使用频次降序排：高频指标排前面，便于人工检查表头是否合理
+    c_old = sorted(used_c, key=lambda x: -used_c[x])
+    n_old = sorted(used_n, key=lambda x: -used_n[x])
+    cmap = {old: i for i, old in enumerate(c_old)}
+    nmap = {old: i for i, old in enumerate(n_old)}
+    src_c, src_n = CAL.get("countries", []), CAL.get("names", [])
+    countries = [src_c[o] for o in c_old if 0 <= o < len(src_c)]
+    names = [src_n[o] for o in n_old if 0 <= o < len(src_n)]
+    for v in days.values():
+        for row in (v.get("c") or []):
+            row[1] = cmap.get(row[1], 0)
+            row[2] = nmap.get(row[2], 0)
+    return countries, names
+
+
 def main():
     sector_path = os.path.join(HERE, "data", "sector_daily.json")
     sector = {}
@@ -496,6 +539,12 @@ def main():
 
     days, stats = build_history(sector)
     stats["yearRange"] = [min(days).split("-")[0], max(days).split("-")[0]] if days else None
+
+    # 必须在写 history.js **之前**裁剪字典表：days 里存的是表索引，
+    # 若先写文件再裁剪，落盘的索引就会指向已经被裁短的新表，客户端必然越界。
+    cal_countries, cal_names = compact_cal_dicts(days)
+    print(f"[i] 日历字典表裁剪：国家 {len(CAL.get('countries', []))} → "
+          f"{len(cal_countries)}，指标名 {len(CAL.get('names', []))} → {len(cal_names)}")
 
     # ⚠️ 不再往 miniprogram/data/ 写按年分片 JSON。
     # 那些文件与 history.js 内容完全重复，而代码只 require history.js，
@@ -526,8 +575,8 @@ def main():
         "stats": stats,
         "indicators": INDICATORS,          # 指标键 -> {n 名称, u 单位}
         # 财经日历的两张字典表：条目只存索引，避免同一个指标名重复存几百次
-        "calCountries": CAL.get("countries", []),
-        "calNames": CAL.get("names", []),
+        "calCountries": cal_countries,
+        "calNames": cal_names,
         "cadence": {"cn": CN_DATA_CADENCE, "us": US_DATA_CADENCE},
         "upcomingCount": len(upcoming),
         "upcomingEventCount": sum(len(x["items"]) for x in upcoming),
@@ -542,7 +591,7 @@ def main():
     print(f"[✓] 历史：{stats['days']} 天（{yrs[0]} ~ {yrs[1]}）/ {stats['events']} 条事件 / "
           f"{stats['macro_days']} 天数值 / {stats['sector_days']} 天板块 → {total/1024:.0f}KB")
     print(f"[✓] 财经日历：{stats['cal_items']} 条 / 覆盖 {stats['cal_days']} 天 / "
-          f"{len(CAL.get('names', []))} 个指标名")
+          f"{len(cal_names)} 个指标名")
     print(f"[!] 日历挂上实际值：{stats['cal_linked']} 条 "
           f"（这些不再重复出现在数值卡片里）")
     # 映射校验：CAL2MACRO 里对不上的键说明名字写错了，必须显式报出来
