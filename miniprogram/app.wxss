@@ -75,6 +75,28 @@ view, text, scroll-view, swiper, swiper-item {
 .tag-shock { background: rgba(255, 149, 0, .18); color: #ffb340; }
 .tag-policy { background: rgba(48, 209, 88, .16); color: #5fd980; }
 .tag-market { background: rgba(255, 214, 10, .16); color: #ffd60a; }
+.tag-eu { background: rgba(175, 82, 222, .18); color: #d0a1ff; }
+.tag-jp { background: rgba(48, 209, 88, .16); color: #5fd980; }
+.tag-kr { background: rgba(255, 149, 0, .18); color: #ffb340; }
+
+/* 地区角标：与分类标签同形但更小更淡，用来标明事件属于哪个资本市场 */
+.geo {
+  display: inline-block;
+  padding: 1rpx 10rpx;
+  border-radius: 999rpx;
+  font-size: 19rpx;
+  line-height: 30rpx;
+  margin-right: 8rpx;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, .08);
+  color: var(--c-text-3);
+}
+.g-us { background: rgba(10, 132, 255, .14); color: #6cb6ff; }
+.g-cn { background: rgba(255, 59, 48, .13); color: #ff7b72; }
+.g-eu { background: rgba(175, 82, 222, .14); color: #d0a1ff; }
+.g-jp { background: rgba(48, 209, 88, .13); color: #5fd980; }
+.g-kr { background: rgba(255, 149, 0, .14); color: #ffb340; }
+.g-global { background: rgba(255, 255, 255, .10); color: var(--c-text-2); }
 
 /* 置信度 */
 .conf {

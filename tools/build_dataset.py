@@ -135,6 +135,60 @@ def _cal_key(country, name):
         nn = nn[len(cc):].lstrip(": ")
     return CAL2MACRO_N.get((cc, nn)) or CAL2MACRO_N.get((cc, _canon_cal(name)))
 
+# ============ 财经日历的「事件 / 动态」过滤 ============
+# 用户要求：重大事件只保留欧洲、美国、中国、日本、韩国这五大资本市场的消息。
+# 东财日历里真正有用的是 kind=0 的数据条目；kind=1/2 混了大量展会、招商、
+# 国事访问、企业发布（如「广州国际五金电器博览会」「伊朗外长将访华」
+# 「平陆运河建成通航」），这些与资本市场无关，属于噪音，直接剔除。
+#
+# 判断顺序：先按关键词剔除展会/访问类，再要求地点落在五大市场；
+# 地点为空时，必须命中央行/监管/交易所等金融机构关键词才保留
+# （央行官员讲话的地点经常是空的，但内容很重要，不能一刀切删掉）。
+
+CAL_JUNK = re.compile(
+    r"博览会|展览会|展会|展销会|交易会|洽谈会|对接会|推介会|招商|研讨会|论坛|"
+    r"峰会|年会|大会|发布会|新品发布|启动仪式|开幕|闭幕|挂牌仪式|"
+    r"访华|访问中国|来访|出访|会见|会谈|致辞|演讲比赛|"
+    r"通航|通车|竣工|开工|投产|建成|落成|"
+    r"选美|赛事|锦标赛|马拉松|演唱会|电影|剧集|综艺")
+
+# 五大资本市场之外的主体：出现即剔除（这些央行/国家的议息会议不属于关注范围）
+CAL_OTHER = re.compile(
+    r"加拿大|澳大利亚|澳洲|新西兰|巴西|印度|俄罗斯|土耳其|墨西哥|印尼|"
+    r"南非|瑞典|挪威|丹麦|瑞士|泰国|越南|马来西亚|新加坡|沙特|以色列|阿根廷|"
+    r"伊朗|伊拉克|埃及|尼日利亚|巴基斯坦")
+
+# 话题闸门：只有命中「资本市场 / 宏观政策」关键词的条目才留。
+# 这是关键一步 —— 光看地点挡不住噪音：「上海国际动漫月」「ChinaJoy」「名酒展」
+# 都在五大市场内，但跟资本市场毫无关系。
+CAL_TOPIC = re.compile(
+    r"美联储|联储|美国证券交易委员会|SEC|美国财政部|美国商务部|美国劳工部|"
+    r"欧央行|欧洲央行|欧盟|欧元区|"
+    r"日本央行|韩国央行|英格兰银行|"
+    r"中国人民银行|央行|货币政策|议息|利率决议|利率|"
+    r"国务院常务会议|国务院金融委|金融委|中央政治局|政治局|中央经济工作会议|政府工作报告|"
+    r"证监会|银保监|金融监管|证券交易所|交易所|"
+    r"财政部|统计局|发改委|国资委|"
+    r"国债|债券|IPO|注册制|退市|印花税|汇率|社融|M2|LPR|MLF|"
+    r"GDP|CPI|PPI|PMI|非农|关税")
+
+
+def _cal_keep(country, name, kind):
+    """财经日历条目是否保留。kind: 0=数据 1=事件 2=动态
+
+    kind=0 的宏观数据一律保留；kind=1/2 是东财的「事件 / 动态」，
+    里面混了大量展会、招商、漫展、产品首发、国事访问，必须靠话题闸门筛。
+    """
+    if kind in (0, None):
+        return True
+    n = name or ""
+    if CAL_JUNK.search(n):
+        return False
+    if CAL_OTHER.search(n):
+        return False
+    return bool(CAL_TOPIC.search(n))
+
+
 for key, meta_ in MACRO.items():
     pts = meta_.get("v", [])
     last_actual = None
@@ -168,7 +222,11 @@ os.makedirs(OUT, exist_ok=True)
 TODAY = dt.date(2026, 9, 26)
 HORIZON = 90                      # 未来三个月
 
-CAT_IMP = {"shock": 3, "macro_us": 2, "macro_cn": 2, "tech": 2, "policy": 2, "market": 2}
+CAT_IMP = {"shock": 3, "macro_us": 2, "macro_cn": 2, "macro_eu": 2,
+           "macro_jp": 2, "macro_kr": 2, "tech": 2, "policy": 2, "market": 2}
+
+# 只收录这五大资本市场的消息（用户明确要求）。GLOBAL 保留给同时冲击这五个市场的事件。
+MARKET_REGIONS = {"US", "CN", "EU", "JP", "KR", "GLOBAL"}
 
 
 
@@ -254,12 +312,21 @@ def build_history(sector):
         return days.setdefault(ymd, {"e": [], "v": [], "s": None, "u": None, "c": None})
 
     # 1) 历史事件：MM-DD + 年份 = 精确日期
+    skipped = []
     for md, year, cat, region, title, desc in SEED_EVENTS:
+        # 只保留五大资本市场。种子库已按这个范围整理过，这里是兜底，
+        # 免得以后往种子库里加条目时不小心又把无关内容放进来。
+        if region not in MARKET_REGIONS:
+            skipped.append((region, title))
+            continue
         ymd = f"{year}-{md}"
         touch(ymd)["e"].append({
             "t": title, "y": year, "c": cat, "r": region, "d": desc,
             "i": CAT_IMP.get(cat, 2),
         })
+    if skipped:
+        print(f"[i] 事件库：已过滤 {len(skipped)} 条非五大资本市场条目"
+              f"（{[r for r, _ in skipped]}）")
 
     # 2) 宏观数值：MACRO_BY_MD 的 key 就是精确公布日
     for ymd, pts in MACRO_BY_MD.items():
@@ -306,6 +373,7 @@ def build_history(sector):
     #    该指标就不再重复出现在「数值」卡片里——否则同一天同一读数会显示两遍。
     cal_countries, cal_names = CAL.get("countries", []), CAL.get("names", [])
     linked = {}          # ymd -> set(已挂到日历行的宏观键)
+    stats_cal_dropped = {}   # 类型 -> 被过滤掉的条数
     for ymd, arr in (CAL.get("days") or {}).items():
         slot = touch(ymd)
         have = {p[0] for p in (slot["v"] or [])}
@@ -314,6 +382,9 @@ def build_history(sector):
         for tm, ci, ni, im, kd, pd in arr:
             country = cal_countries[ci] if 0 <= ci < len(cal_countries) else ""
             name = cal_names[ni] if 0 <= ni < len(cal_names) else ""
+            if not _cal_keep(country, name, kd):
+                stats_cal_dropped[kd] = stats_cal_dropped.get(kd, 0) + 1
+                continue
             mk = _cal_key(country, name)
             if mk and (mk not in have or mk in used):
                 mk = None                       # 该日没这个指标的数值，或已挂过
@@ -346,6 +417,11 @@ def build_history(sector):
             stats["macro_days"] += 1
     stats["days"] = len(days)
     stats["cal_linked"] = sum(len(s) for s in linked.values())
+    if stats_cal_dropped:
+        kind_cn = {1: "事件(展会/访问等)", 2: "动态", 0: "数据"}
+        detail = "、".join(f"{kind_cn.get(k, k)} {v} 条"
+                           for k, v in sorted(stats_cal_dropped.items()))
+        print(f"[i] 财经日历：已过滤非五大资本市场条目 —— {detail}")
 
     return days, stats
 

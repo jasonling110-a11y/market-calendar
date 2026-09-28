@@ -173,6 +173,7 @@
           <view class="ev">
             <view class="ev-h">
               <text class="tag {{item.cls}}">{{item.label}}</text>
+              <text class="geo g-{{item.r}}" wx:if="{{item.region}}">{{item.region}}</text>
               <text class="ev-t">{{item.t}}</text>
             </view>
             <view class="ev-d">{{item.d}}</view>

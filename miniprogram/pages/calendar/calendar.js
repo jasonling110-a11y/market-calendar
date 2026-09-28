@@ -8,11 +8,16 @@ const notes = require('../../services/notes.js')
 const CAT = {
   macro_us: { label: '美国数据', cls: 'us' },
   macro_cn: { label: '中国数据', cls: 'cn' },
+  macro_eu: { label: '欧洲数据', cls: 'eu' },
+  macro_jp: { label: '日本数据', cls: 'jp' },
+  macro_kr: { label: '韩国数据', cls: 'kr' },
   shock: { label: '突发事件', cls: 'shock' },
   tech: { label: '技术突破', cls: 'tech' },
   policy: { label: '政策制度', cls: 'policy' },
   market: { label: '市场里程碑', cls: 'market' }
 }
+// 地区角标：一眼看出这条事件属于哪个资本市场
+const REG = { US: '美国', CN: '中国', EU: '欧洲', JP: '日本', KR: '韩国', GLOBAL: '全球' }
 const CONF = {
   confirmed: { label: '已官宣', cls: 'confirmed' },
   estimated: { label: '规律推算', cls: 'estimated' },
@@ -232,7 +237,11 @@ Page({
 
     const events = (raw.e || []).map((x) => {
       const c = CAT[x.c] || { label: '事件', cls: 'market' }
-      return { t: x.t, d: x.d, i: x.i || 2, label: c.label, cls: 'tag-' + c.cls }
+      return {
+        t: x.t, d: x.d, i: x.i || 2,
+        label: c.label, cls: 'tag-' + c.cls,
+        r: (x.r || '').toLowerCase(), region: REG[x.r] || ''
+      }
     })
 
     let sector = null
@@ -440,6 +449,7 @@ Page({
       return {
         t: x.t, d: x.d, tm: x.tm, i: x.i || 2,
         label: c.label, cls: 'tag-' + c.cls,
+        r: (x.r || '').toLowerCase(), region: REG[x.r] || '',
         confLabel: cf.label, confCls: 'conf-' + cf.cls,
         cd, v: val
       }

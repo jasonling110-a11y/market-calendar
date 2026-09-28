@@ -144,6 +144,17 @@ body{overflow:hidden}
 .tag-shock{background:rgba(255,149,0,.18);color:#ffb340}
 .tag-policy{background:rgba(48,209,88,.16);color:#5fd980}
 .tag-market{background:rgba(255,214,10,.16);color:#ffd60a}
+.tag-eu{background:rgba(175,82,222,.18);color:#d0a1ff}
+.tag-jp{background:rgba(48,209,88,.16);color:#5fd980}
+.tag-kr{background:rgba(255,149,0,.18);color:#ffb340}
+/* 地区角标：与分类标签同形但更小、更淡，避免抢视觉 */
+.g-us,.g-cn,.g-eu,.g-jp,.g-kr,.g-global{background:rgba(255,255,255,.07);color:var(--text3);font-size:9.5px;padding:1px 6px}
+.g-us{background:rgba(10,132,255,.14);color:#6cb6ff}
+.g-cn{background:rgba(255,59,48,.13);color:#ff7b72}
+.g-eu{background:rgba(175,82,222,.14);color:#d0a1ff}
+.g-jp{background:rgba(48,209,88,.13);color:#5fd980}
+.g-kr{background:rgba(255,149,0,.14);color:#ffb340}
+.g-global{background:rgba(255,255,255,.09);color:#8e8e93}
 .conf{font-size:10px;padding:1px 6px;border-radius:4px}
 .conf-confirmed{color:#6cb6ff;border:1px solid rgba(10,132,255,.5)}
 .conf-estimated{color:#98989f;border:1px solid var(--sep)}
@@ -173,10 +184,11 @@ body{overflow:hidden}
 .civ-a{color:var(--warn);font-weight:600;font-size:12.5px}
 @keyframes ciIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .ci.anr{animation:ciIn .34s cubic-bezier(.22,.68,.36,1) both}
-.up-t{font-size:12.5px;color:var(--text2);padding-bottom:6px;margin-bottom:5px;border-bottom:1px solid var(--sep)}
-.up-pt{display:flex;padding:3px 0}
-.up-dot{font-size:12.5px;color:var(--text3);margin-right:6px;flex-shrink:0;line-height:19px}
-.up-tx{font-size:12.5px;line-height:19px;flex:1}
+/* B 站要点是这块页面的正主，字号要比其余卡片明显大一档，读起来才不吃力 */
+.up-t{font-size:14px;font-weight:500;color:var(--text);padding-bottom:8px;margin-bottom:7px;border-bottom:1px solid var(--sep);line-height:20px}
+.up-pt{display:flex;padding:5px 0}
+.up-dot{font-size:15px;color:var(--text3);margin-right:7px;flex-shrink:0;line-height:23px}
+.up-tx{font-size:14.5px;line-height:23px;flex:1}
 .up-link{margin-top:7px;padding-top:6px;border-top:1px solid var(--sep);font-size:11px;color:#3b9cff;text-align:right;cursor:pointer}
 .empty{padding:46px 30px;text-align:center;font-size:13px;color:var(--text3)}
 .empty-sub{margin-top:7px;font-size:11px;color:#4a4a4c}
@@ -317,8 +329,11 @@ const HISTORY = __HISTORY__;
 const UPCOMING = __UPCOMING__;
 const META = __META__;
 
-const CAT={macro_us:{l:'美国数据',c:'us'},macro_cn:{l:'中国数据',c:'cn'},shock:{l:'突发事件',c:'shock'},
+const CAT={macro_us:{l:'美国数据',c:'us'},macro_cn:{l:'中国数据',c:'cn'},macro_eu:{l:'欧洲数据',c:'eu'},
+  macro_jp:{l:'日本数据',c:'jp'},macro_kr:{l:'韩国数据',c:'kr'},shock:{l:'突发事件',c:'shock'},
   tech:{l:'技术突破',c:'tech'},policy:{l:'政策制度',c:'policy'},market:{l:'市场里程碑',c:'market'}};
+// 地区角标：一眼看出这条事件属于哪个资本市场
+const REG={US:'美国',CN:'中国',EU:'欧洲',JP:'日本',KR:'韩国',GLOBAL:'全球'};
 const CONF={confirmed:{l:'已官宣',c:'confirmed'},estimated:{l:'规律推算',c:'estimated'},rumored:{l:'待官宣',c:'rumored'}};
 const UP={}; UPCOMING.forEach(d=>UP[d.date]=d.items);
 const IND=META.indicators||{};
@@ -462,7 +477,10 @@ function renderPanel(){
     if(day.e&&day.e.length){
       html+=`<div class="card"><div class="card-title"><span>这一天发生的大事件</span><span class="src">${day.e.length} 条</span></div>`+
         day.e.map(x=>{const c=CAT[x.c]||{l:'事件',c:'market'};
-          return `<div class="row"><div><div class="ev-h"><span class="tag tag-${c.c}">${c.l}</span><span class="ev-t">${x.t}</span></div><div class="ev-d">${x.d}</div></div></div>`}).join('')+`</div>`;
+          const g=x.r?(REG[x.r]||x.r):'';
+          return `<div class="row"><div><div class="ev-h"><span class="tag tag-${c.c}">${c.l}</span>`+
+            (g?`<span class="tag g-${x.r.toLowerCase()}">${g}</span>`:'')+
+            `<span class="ev-t">${x.t}</span></div><div class="ev-d">${x.d}</div></div></div>`}).join('')+`</div>`;
     }
     (day.u||[]).forEach(u=>{
       html+=`<div class="card"><div class="card-title"><span>UP 主观点 · ${u.n||'UP 主'}</span><span class="src">转写提炼</span></div>`+
