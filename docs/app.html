@@ -209,6 +209,10 @@ body{overflow:hidden}
 .sh-bd{flex:1;overflow-y:auto;padding:14px 18px}
 .sh-bd::-webkit-scrollbar{width:0}
 .ta{width:100%;height:190px;background:var(--surface);border-radius:10px;padding:12px;font-size:14px;line-height:22px;color:var(--text);border:none;outline:none;resize:none;font-family:inherit}
+.nvtools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:9px;margin-bottom:10px;border-bottom:1px solid var(--sep)}
+.nvt{font-size:12px;color:var(--info);padding:5px 11px;border:1px solid var(--sep);border-radius:7px;cursor:pointer;white-space:nowrap}
+.nvt:active{opacity:.55}
+.nvt-tip{font-size:10.5px;color:var(--text3);margin-left:auto}
 .chips{display:flex;flex-wrap:wrap;margin-top:12px}
 .chip{padding:5px 14px;font-size:13px;color:var(--text2);background:var(--surface);border:1px solid var(--sep);border-radius:999px;margin:0 8px 8px 0;cursor:pointer}
 .chip.on{color:#fff;background:var(--info);border-color:var(--info)}
@@ -295,6 +299,12 @@ body{overflow:hidden}
   <div class="sheet" id="notesView">
     <div class="sh-hd"><span class="sh-x" onclick="closeNotesView()">‹</span><span class="sh-t">我的笔记</span><span class="sh-c" id="nvCount"></span></div>
     <div class="sh-bd">
+      <div class="nvtools">
+        <span class="nvt" onclick="exportNotes()">导出备份</span>
+        <span class="nvt" onclick="document.getElementById('nvFile').click()">导入备份</span>
+        <input type="file" id="nvFile" accept="application/json,.json" style="display:none" onchange="importNotes(this)">
+        <span class="nvt-tip">笔记只存在本机浏览器，建议定期导出</span>
+      </div>
       <div class="sbar"><input id="nvSearch" placeholder="搜索笔记内容" oninput="renderNotesView()"></div>
       <div class="chips" id="nvTags"></div>
       <div id="nvList"></div>
@@ -582,6 +592,59 @@ function renderNotesView(){
 }
 function setNvTag(t){nvTag=t;renderNotesView()}
 function addNoteToday(){openEditor(TODAY,null)}
+
+// ---- 笔记导出 / 导入 ----------------------------------------------------
+// 笔记存在 localStorage（本机浏览器），换设备、换浏览器、清缓存都会丢，
+// 所以必须给一条「搬走」的通路：导出成 JSON 文件，在另一台设备导入。
+// 导入按 updatedAt 后写胜出，跟小程序端云同步的冲突策略保持一致。
+function exportNotes(){
+  const live=Object.keys(NOTES).filter(k=>!NOTES[k].deleted).length;
+  if(!live){alert('还没有笔记可以导出');return}
+  const payload={format:'market-calendar-notes',version:1,
+    exportedAt:new Date().toISOString(),count:live,notes:NOTES};
+  const blob=new Blob([JSON.stringify(payload,null,1)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='市场日历笔记_'+TODAY+'.json';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){URL.revokeObjectURL(url);a.remove()},800);
+}
+function importNotes(input){
+  const f=input.files&&input.files[0];
+  if(!f)return;
+  const rd=new FileReader();
+  rd.onload=function(){
+    try{
+      const j=JSON.parse(rd.result)||{};
+      let incoming=(j.notes&&typeof j.notes==='object')?j.notes:null;
+      if(!incoming&&typeof j==='object'&&!j.format){
+        // 裸的 {id:note} 旧格式也接受
+        incoming=j;
+      }
+      if(Array.isArray(incoming)){
+        const o={};incoming.forEach(function(n){if(n&&n.id)o[n.id]=n});incoming=o;
+      }
+      if(!incoming){alert('文件里没有笔记数据');input.value='';return}
+      let added=0,updated=0,skipped=0;
+      Object.keys(incoming).forEach(function(id){
+        const n=incoming[id];
+        if(!n||typeof n!=='object'||!n.date)return;
+        const old=NOTES[id];
+        if(!old){NOTES[id]=n;added++}
+        else if((n.updatedAt||0)>(old.updatedAt||0)){NOTES[id]=n;updated++}
+        else skipped++;
+      });
+      saveNotes(NOTES);
+      renderNotesView(); renderGrid(); renderPanel();
+      alert('导入完成\n新增 '+added+' 条，更新 '+updated+' 条'
+        +(skipped?'，跳过 '+skipped+' 条（本地版本更新）':''));
+    }catch(e){
+      alert('导入失败：这不是有效的笔记备份文件\n'+e.message);
+    }
+    input.value='';
+  };
+  rd.readAsText(f,'utf-8');
+}
 
 function showUpdateInfo(){
   alert('数据更新说明\n\n'
