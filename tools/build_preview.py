@@ -259,11 +259,18 @@ body{overflow:hidden}
 .up-dot{font-size:15px;color:var(--text3);margin-right:7px;flex-shrink:0;line-height:23px}
 .up-tx{font-size:14.5px;line-height:23px;flex:1}
 .up-link{margin-top:7px;padding-top:6px;border-top:1px solid var(--sep);font-size:11px;color:#3b9cff;text-align:right;cursor:pointer}
-/* 「最近一期」兜底卡片：说明为什么这天会出现别的日期的内容，不能悄悄塞进去 */
-.up-note{font-size:11px;color:var(--text2);background:var(--surface2);border-radius:8px;
-  padding:7px 10px;margin-bottom:10px;line-height:1.55}
-.up-jump{color:#c48bff;cursor:pointer;white-space:nowrap}
-.card.up-latest{border-color:rgba(191,90,242,.3)}
+/* 没有视频的日子只留一行指路条。
+   早先这里是直接铺一整张卡片（标题 + 全部要点），结果十月份每点一天都长得一模一样
+   —— 全是 9/30 的内容，用户反馈「点到哪天都显示同一天的视频总结」。
+   正文不该被搬到别的日期上，指个路就够了。 */
+.up-ptr{display:flex;align-items:center;gap:8px;padding:11px 14px;border-radius:11px;
+  background:var(--surface);border:1px dashed rgba(191,90,242,.34);
+  font-size:12.5px;color:var(--text2);cursor:pointer;line-height:1.5}
+.up-ptr:active{opacity:.7}
+.up-ptr-i{color:#c48bff;font-size:10px;flex-shrink:0}
+.up-ptr-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.up-ptr b{color:#c48bff;font-weight:500}
+.up-ptr-go{color:var(--text3);flex-shrink:0}
 .empty{padding:46px 30px;text-align:center;font-size:13px;color:var(--text3)}
 .empty-sub{margin-top:7px;font-size:11px;color:#4a4a4c}
 .nodata{padding:3px 20px 8px;font-size:10.5px;color:var(--text3);text-align:center}
@@ -620,19 +627,25 @@ function decorate(items,date){
 
 function tagHtml(it){return `<span class="tag ${it.cls}">${it.label}</span>`}
 
-// UP 要点卡片。srcDate 非空表示这是「最近一期」兜底，必须把来源日期显式写出来，
-// 否则用户会以为这条视频真就是所选那天发的。
-function upCardHtml(u,srcDate){
+// UP 要点卡片。只在「这一天确实有视频」时使用，正文绝不挪到别的日期上。
+function upCardHtml(u){
   const tag=u.auto?'自动摘录 · 待归纳':'转写提炼';
-  const ds=srcDate?srcDate.slice(5).replace('-','/'):'';
-  const src=srcDate?('最近一期 · '+ds):tag;
-  return `<div class="card${srcDate?' up-latest':''}">`+
-    `<div class="card-title"><span>UP 主观点 · ${esc(u.n||'UP 主')}</span><span class="src">${src}</span></div>`+
-    (srcDate?`<div class="up-note">这一天没有新视频 · 下面是最近一期 `+
-      `<span class="up-jump" onclick="jumpTo('${srcDate}')">${ds} ›</span></div>`:'')+
+  return `<div class="card">`+
+    `<div class="card-title"><span>UP 主观点 · ${esc(u.n||'UP 主')}</span><span class="src">${tag}</span></div>`+
     `<div class="up-t">${esc(u.t||'')}</div>`+
     (u.p||[]).map(pt=>`<div class="up-pt"><span class="up-dot">·</span><span class="up-tx">${esc(pt)}</span></div>`).join('')+
     `<div class="up-link" onclick="window.open('https://www.bilibili.com/video/${u.k}','_blank')">在 B 站看原视频 ›</div></div>`;
+}
+// 这天没有视频时，只给一行「最近一期在哪」的指路条（点一下跳过去）。
+// 不要把那一期的正文搬过来 —— 十月份每天点开都是同一张 9/30 的卡片，
+// 用户会以为「点到哪天都显示同一天」。指路即可，别代读。
+function upPointerHtml(srcDate,title){
+  const ds=srcDate.slice(5).replace('-','/');
+  return `<div class="up-ptr" onclick="jumpTo('${srcDate}')">`+
+    `<span class="up-ptr-i">▶</span>`+
+    `<span class="up-ptr-t">这一天没有新视频 · 最近一期 <b>${ds}</b>`+
+    (title?' '+esc(title):'')+`</span>`+
+    `<span class="up-ptr-go">›</span></div>`;
 }
 
 function renderPanel(){
@@ -700,15 +713,18 @@ function renderPanel(){
             (g?`<span class="tag g-${x.r.toLowerCase()}">${g}</span>`:'')+
             `<span class="ev-t">${x.t}</span></div><div class="ev-d">${x.d}</div></div></div>`}).join('')+`</div>`;
     }
-    (day.u||[]).forEach(u=>{ html+=upCardHtml(u,''); });
-    // 这天没有视频时，把最近一期顶上来，并在卡片里写清它来自哪天。
-    // 打开页面默认落在「今天」，艾丽未必每天都发 —— 不兜底就是空白一块，
-    // 用户会以为「视频总结又没了」，其实只是今天还没发。
-    const fbDate=latestUpOnOrBefore(sel);
-    if(!(day.u&&day.u.length)&&fbDate){
-      (HISTORY[fbDate].u||[]).forEach(u=>{ html+=upCardHtml(u,fbDate); });
+    // 这天有视频就铺卡片；没有则只给指路条，不把别期的正文搬过来。
+    // 打开页面默认落在「今天」，而艾丽并不是每天都发 —— 完全没有提示的话，
+    // 用户会以为「视频总结又没了」（这个疑问已经出现过两次）。
+    const hasUp=!!(day.u&&day.u.length);
+    const fbDate=hasUp?null:latestUpOnOrBefore(sel);
+    if(hasUp){
+      day.u.forEach(u=>{ html+=upCardHtml(u); });
+    }else if(fbDate){
+      const u0=(HISTORY[fbDate].u||[])[0];
+      html+=upPointerHtml(fbDate,u0?u0.t:'');
     }
-    // 有「最近一期」兜底卡片时不再叠「暂无收录」，两句话摆在一起自相矛盾
+    // 有指路条时不再叠「暂无收录」，两句话摆在一起自相矛盾
     if(!(day.s&&day.s.up&&day.s.up.length)&&!(day.e&&day.e.length)&&!dvals.length&&!cal.length&&!fbDate)
       html+=`<div class="empty">${sel} 暂无收录<div class="empty-sub">这一天没有发布重要数据，也没有收录到重大事件</div></div>`;
   } else {
