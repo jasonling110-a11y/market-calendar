@@ -491,6 +491,12 @@ const META = __META__;
 // 点进去只会撞一堵 CORS 的墙，还不如不出现。
 const CLOUD_CFG_RAW = __CLOUD_CONFIG__;
 const CLOUD_CFG = cloudAllowed() ? CLOUD_CFG_RAW : null;
+// /api/status 这类接口只由本机 tools/workbench.py 提供。托管环境下调用必然是 404，
+// 虽然旧代码已 catch 掉不报错，但每次打开都白发一个失败请求，这里直接不发。
+function isLocalWorkbench(){
+  const h=location.hostname||'';
+  return h==='localhost'||h==='127.0.0.1'||h==='[::1]';
+}
 function cloudAllowed(){
   if(!CLOUD_CFG_RAW)return false;
   if(location.protocol!=='http:'&&location.protocol!=='https:')return false; // file:// 的 Origin 是 null
@@ -1149,6 +1155,7 @@ function wbSet(cls,text){
   const t=document.getElementById('wbText'); if(t) t.textContent=text;
 }
 function wbInit(){
+  if(!isLocalWorkbench())return;   // 托管环境没有这套接口，别发这个必然 404 的请求
   fetch('/api/status',{cache:'no-store'})
     .then(r=>r.ok?r.json():Promise.reject(new Error('no api')))
     .then(d=>{
