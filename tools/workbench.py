@@ -72,6 +72,10 @@ def pick_py(script):
 QUICK_STEPS = [
     ("财经日历（含未来排期）", "fetch_calendar.py"),
     ("A 股板块行情", "fetch_sectors.py"),
+    # 广度与催化的顺序不能换：催化是拿「当天领涨板块」去匹配新闻的，
+    # 必须排在 fetch_sectors.py 之后，否则匹配的是上一次的板块榜。
+    ("个股涨跌家数（市场广度）", "fetch_breadth.py"),
+    ("领涨板块的消息面催化", "fetch_catalysts.py"),
     ("宏观数值与市场预期", "fetch_macro.py"),
     # 新转写但还没提炼的视频先自动摘录入包，避免日历上出现空窗
     ("B 站要点兜底摘录", "summarize_up.py"),

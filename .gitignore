@@ -16,6 +16,9 @@ tools/data/_pending.json
 # 抓取前的匆忙备份（*.bak_时间戳），只在本机回滚时有用
 tools/data/*.bak_*
 tools/data/*.bak
+# 广度回填的断点续跑进度：纯本机用，Actions 走的是增量模式不需要它，
+# 提交进去只会每天多一份 60KB 的变动噪音
+tools/data/.breadth_state.json
 
 # ---- 凭据（绝对不要提交）----
 # B 站 cookie（含 buvid3 等身份标识），用完即弃

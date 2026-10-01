@@ -197,6 +197,20 @@ body{overflow:hidden}
 .bk-p{font-size:12.5px;font-variant-numeric:tabular-nums}
 .up{color:var(--up)}.down{color:var(--down)}
 .breadth{margin-top:10px;padding-top:8px;border-top:1px solid var(--sep);font-size:11.5px;color:var(--text2);text-align:center}
+/* 领涨板块的消息面催化：一个板块一行、消息贴在右侧。
+   板块名单独占一列而不是塞进标题里，是为了让「板块 → 消息」的对应关系一眼可见。 */
+.ct-sec{display:flex;gap:9px;padding:9px 0;border-top:1px solid var(--sep)}
+.ct-sec:first-of-type{border-top:0;padding-top:2px}
+.ct-nm{flex:0 0 auto;font-size:12.5px;color:var(--up);font-weight:500;min-width:4.4em;max-width:6.4em;line-height:1.5}
+.ct-list{flex:1;min-width:0}
+.ct-it{display:flex;gap:6px;align-items:baseline;font-size:12.5px;color:var(--text2);line-height:1.55;
+  text-decoration:none;cursor:pointer}
+.ct-it+.ct-it{margin-top:5px}
+.ct-it:active{opacity:.65}
+.ct-hm{flex:0 0 auto;font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums}
+.ct-t{flex:1;min-width:0}
+.ct-badge{flex:0 0 auto;font-size:10px;padding:1px 5px;border-radius:5px;color:#c48bff;
+  background:rgba(191,90,242,.13);white-space:nowrap}
 .row{padding:10px 0;border-bottom:1px solid var(--sep)}
 .row:last-child{border-bottom:none}
 .ev-h{display:flex;align-items:center;flex-wrap:wrap;margin-bottom:4px;gap:6px}
@@ -562,6 +576,19 @@ function upSet(y,m){const p=y+'-'+pad(m)+'-';const s={};for(const k in UP)if(k.i
 function vidSet(y,m){const p=y+'-'+pad(m)+'-';const s={};for(const k of UP_DATES){if(k.indexOf(p)===0)s[k]=true}return s}
 
 function fp(p){const n=+p;return (n>0?'+':(n<0?'-':''))+Math.abs(n).toFixed(2)+'%'}
+// 广度口径：个股优先（su/sd/sn），没有个股数据才退回板块口径（bt/br）。
+// 为什么改成个股：368 个板块的涨跌会被少数权重板块带偏 ——
+// 「34 个板块红着、4000 只个股在跌」在板块口径里看起来是「普涨」，在情绪上是普跌。
+function breadthLine(s){
+  if(s.su!=null){
+    const pct=s.sn?Math.round(s.su/s.sn*100):0;
+    return `沪深 ${s.sn} 只个股 · <span class="up">${s.su} 涨</span> / `+
+           `<span class="down">${s.sd} 跌</span> · 涨占比 ${pct}%`;
+  }
+  if(s.bt!=null)return `当日 ${s.bt} 个板块 · <span class="up">${s.br} 涨</span> / `+
+    `<span class="down">${s.bt-s.br} 跌</span>`;
+  return '';
+}
 function fv(v,u){if(v===null||v===undefined||v==='')return '—';const n=+v;if(isNaN(n))return '—';
   const ab=Math.abs(n);let s;if(ab%1===0){s=String(ab)}else{s=ab.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')};
   return (n<0?'-':'')+s+(u||'')}
@@ -703,7 +730,24 @@ function renderPanel(){
       html+=`<div class="card"><div class="card-title"><span>A 股领涨 / 领跌板块</span><span class="src">实盘 ${day.s.date}</span></div><div class="two">
         <div class="col"><div class="col-t up">领涨</div>${day.s.up.map(x=>`<div class="bk"><span class="bk-n">${x.n}</span><span class="bk-p up">${fp(x.p)}</span></div>`).join('')}</div>
         <div class="col"><div class="col-t down">领跌</div>${day.s.down.map(x=>`<div class="bk"><span class="bk-n">${x.n}</span><span class="bk-p down">${fp(x.p)}</span></div>`).join('')}</div></div>
-        <div class="breadth">当日 ${day.s.bt} 个板块 · <span class="up">${day.s.br} 涨</span> / <span class="down">${day.s.bt-day.s.br} 跌</span></div></div>`;
+        <div class="breadth">${breadthLine(day.s)}</div></div>`;
+    }
+    // 领涨板块的消息面催化：补上「今天为什么涨」。
+    // 抓不到就整块不出现 —— 宁可不显示，也不要写一句「暂无催化」占位。
+    if(day.s&&day.s.ct){
+      const ns=Object.keys(day.s.ct).filter(n=>day.s.ct[n]&&day.s.ct[n].length);
+      if(ns.length){
+        const tot=ns.reduce((a,n)=>a+day.s.ct[n].length,0);
+        html+=`<div class="card"><div class="card-title"><span>领涨板块的消息面催化</span><span class="src">${tot} 条</span></div>`+
+          ns.map(n=>`<div class="ct-sec"><span class="ct-nm">${esc(n)}</span><div class="ct-list">`+
+            day.s.ct[n].map(x=>
+              `<a class="ct-it"${x.u?` href="${esc(x.u)}" target="_blank" rel="noopener"`:''}>`+
+              `<span class="ct-hm">${esc(x.hm||'')}</span>`+
+              `<span class="ct-t">${esc(x.t)}</span>`+
+              (x.src==='tag'?`<span class="ct-badge">官方标注</span>`:'')+
+              `</a>`).join('')+
+            `</div></div>`).join('')+`</div>`;
+      }
     }
     if(day.e&&day.e.length){
       html+=`<div class="card"><div class="card-title"><span>这一天发生的大事件</span><span class="src">${day.e.length} 条</span></div>`+
@@ -1149,14 +1193,21 @@ function showUpdateInfo(){
     +'【更新方式】'+how+'\n\n'
     +'【覆盖范围】'+st.days+' 天历史 · '+st.events+' 条事件 · '+st.sector_days
     +' 天 A 股板块行情（'+sr[0]+' ~ '+sr[1]+'）\n'
+    +'【市场广度】'+(st.breadth_days||0)+' 天个股涨跌家数（沪深 A 股逐只统计，'
+    +'剔除北交所）\n'
+    +((st.catalyst_days)?'【板块催化】'+st.catalyst_days+' 天 / '+st.catalyst_items
+      +' 条，取当天新浪 7×24 与同花顺快讯中点到该板块的条目\n':'')
     +'【日历挂值】'+st.cal_linked+' / '+st.cal_items+' 条事件已挂上具体数值\n\n'
-    +'【口径说明】数值直接标在日历行上，含实际值 / 前值 / 同比 / 环比；\n'
-    +'显示「—」表示该期还没公布或暂时没有可信来源——宁缺勿错，不猜数。');
+    +'【口径说明】涨跌家数按个股统计，不按板块 —— 板块涨跌会被少数权重板块带偏。\n'
+    +'数值直接标在日历行上，含实际值 / 前值 / 同比 / 环比；\n'
+    +'显示「—」表示该期还没公布或暂时没有可信来源——宁缺勿错，不猜数。\n'
+    +'板块催化只在确实匹配到当天消息时显示，没有就整块不出现。');
 }
 function toggleHint(){
   const h=document.getElementById('hint');
   h.className = h.className.includes('on') ? 'hint' : 'hint on';
   h.innerHTML=`<b>数据覆盖</b>：${META.stats.days} 天历史 · ${META.stats.events} 条真实事件 · ${META.stats.sector_days} 天 A 股板块行情（${META.sectorRange[0]} ~ ${META.sectorRange[1]}）<br>
+  <b>涨跌家数</b>：按沪深个股逐只统计（${META.stats.breadth_days||0} 天），不是「多少板块涨」——板块口径会被少数权重板块带偏。<br>
   <b>三档置信度</b>：<span class="conf conf-confirmed">已官宣</span> 官方公布日期 ｜ <span class="conf conf-estimated">规律推算</span> 按发布规律推算 ｜ <span class="conf conf-rumored">待官宣</span> 市场预期未官宣<br>
   <b>更新</b>：本机工作台定时抓取（08:30 / 12:30 / 18:00 快速，21:30 完整含 B 站转写）；云端由 GitHub Actions 每日更新，手机上打开即是最新。<br>
   <b>免责</b>：仅用于信息整理与复盘参考，不构成投资建议，日程与行情以官方发布为准。`;

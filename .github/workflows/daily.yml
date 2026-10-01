@@ -43,6 +43,11 @@ jobs:
           python3 fetch_calendar.py
           echo "── A 股板块行情 ──"
           python3 fetch_sectors.py || echo "  [!] 板块抓取失败，沿用上次数据"
+          # 广度与催化必须排在 fetch_sectors.py 之后：催化是拿「当天领涨板块」匹配新闻的
+          echo "── 个股涨跌家数（市场广度）──"
+          python3 fetch_breadth.py || echo "  [!] 广度抓取失败，沿用上次数据"
+          echo "── 领涨板块的消息面催化 ──"
+          python3 fetch_catalysts.py || echo "  [!] 催化抓取失败，沿用上次数据"
           echo "── 宏观数值与市场预期 ──"
           python3 fetch_macro.py || echo "  [!] 宏观抓取失败，沿用上次数据"
 
