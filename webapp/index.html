@@ -184,6 +184,18 @@ a.ct-it:active{opacity:.6}
 .ct-t0{color:#ffc266;background:rgba(255,194,102,.14)}
 .ct-t1{color:#5bc8ff;background:rgba(91,200,255,.14)}
 .ct-t2{color:var(--text3);background:var(--surface2)}
+/* 领跌侧多出来的两个维度：资金估值 / 海外宏观 */
+.ct-t3{color:#c792ea;background:rgba(199,146,234,.14)}
+.ct-t4{color:#8fd694;background:rgba(143,214,148,.14)}
+/* 影响方向：利空/利好（直接）vs 偏空/偏多（间接传导） */
+.ct-d0{color:#5ad07a;background:rgba(48,209,88,.15)}
+.ct-d1{color:var(--text3);background:var(--surface2);border:1px solid var(--sep)}
+.ct-u0{color:#ff8a80;background:rgba(255,69,58,.15)}
+/* 持续性 */
+.ct-ps{color:var(--text3);background:var(--surface2);border:1px dashed var(--sep)}
+/* 领跌卡片：主因边框用「跌」的绿，和领涨的红区分开 */
+.ct-dn .ct-it.on{border-left-color:var(--down)}
+.ct-dn .ct-pct{color:var(--down)}
 .ct-src{font-size:10.5px;color:var(--text3);margin-left:auto;
   font-variant-numeric:tabular-nums;white-space:nowrap}
 .ct-t{font-size:12.5px;color:var(--text2);line-height:1.55}
@@ -637,6 +649,43 @@ function decorate(items,date){
 function tagHtml(it){return `<span class="tag ${it.cls}">${it.label}</span>`}
 
 // UP 要点卡片。只在「这一天确实有视频」时使用，正文绝不挪到别的日期上。
+// 领涨 / 领跌催化卡片共用一份渲染，保证两侧口径、格式、详略完全一致。
+// down=true 时：卡片加 .ct-dn（主因边框与涨幅用「跌」的绿），
+// 维度标签多出「资金估值 / 海外宏观」，每条多「影响方向 + 持续性」两个判断，
+// 无催化的措辞改成「技术性回调 / 资金轮动」。
+function ctCardHtml(title,grps,down){
+  const tyCls={'政策':'ct-t0','政策监管':'ct-t0','产业':'ct-t1','基本面':'ct-t1',
+               '公司':'ct-t2','龙头个股':'ct-t2','资金估值':'ct-t3','海外宏观':'ct-t4'};
+  const nHit=grps.filter(g=>g.c).length;
+  const none=down
+    ? '<b>未找到明确的消息面催化</b>，按技术性回调 / 资金轮动处理'
+    : '<b>未找到明确的消息面催化</b>，当日涨幅更可能来自资金面 / 情绪 / 板块轮动';
+  return `<div class="card${down?' ct-dn':''}"><div class="card-title"><span>${title}</span>`+
+    `<span class="src">${nHit}/${grps.length} 个板块有明确催化</span></div>`+
+    grps.map(g=>{
+      const head=`<div class="ct-hd"><span class="ct-nm">${g.names.map(n=>esc(n)).join(' / ')}</span>`+
+        `<span class="ct-pct">${fp(g.p)}</span></div>`;
+      if(!g.c)return `<div class="ct-grp">${head}<div class="ct-none">○ ${none}</div></div>`;
+      return `<div class="ct-grp">${head}`+
+        g.c.it.map(x=>{
+          // 有些快讯（尤其新浪的国务院/部委稿）没有 docurl。渲染成 <a> 会给出
+          // 一个「看着能点、点了没反应」的假链接，所以没链接时用 div。
+          const tag=x.u?'a':'div';
+          const dir=x.dir||'';
+          const dirCls=down?(dir==='利空'?'ct-d0':(dir==='偏空'?'ct-d1':''))
+                           :(dir==='利好'?'ct-u0':(dir==='偏多'?'ct-d1':''));
+          return `<${tag} class="ct-it${x.lv==='主'?' on':''}"${x.u?` href="${esc(x.u)}" target="_blank" rel="noopener"`:''}>`+
+          `<div class="ct-l1"><span class="ct-tag ${x.lv==='主'?'ct-lv0':'ct-lv1'}">${x.lv==='主'?'主因':'次要'}</span>`+
+          `<span class="ct-tag ${tyCls[x.ty]||'ct-t2'}">${esc(x.ty||'')}</span>`+
+          (dir?`<span class="ct-tag ${dirCls}">${esc(dir)}</span>`:'')+
+          (x.ps?`<span class="ct-tag ct-ps">${esc(x.ps)}</span>`:'')+
+          `<span class="ct-src">${esc(x.hm||'')} · ${esc(x.m||'')}</span></div>`+
+          `<div class="ct-t">${esc(x.t)}</div></${tag}>`;
+        }).join('')+
+        (g.c.ch?`<div class="ct-why">↳ 关联逻辑：${esc(g.c.ch)}</div>`:'')+
+        `</div>`;
+    }).join('')+`</div>`;
+}
 function upCardHtml(u){
   const tag=u.auto?'自动摘录 · 待归纳':'转写提炼';
   return `<div class="card">`+
@@ -728,27 +777,23 @@ function renderPanel(){
         seen[key]=grps.length;
         grps.push({names:[x.n],p:x.p,c:c||null});
       });
-      const nHit=grps.filter(g=>g.c).length;
-      html+=`<div class="card"><div class="card-title"><span>领涨板块的消息面催化</span>`+
-        `<span class="src">${nHit}/${grps.length} 个板块有明确催化</span></div>`+
-        grps.map(g=>{
-          const head=`<div class="ct-hd"><span class="ct-nm">${g.names.map(n=>esc(n)).join(' / ')}</span>`+
-            `<span class="ct-pct">${fp(g.p)}</span></div>`;
-          if(!g.c)return `<div class="ct-grp">${head}<div class="ct-none">○ <b>未找到明确的消息面催化</b>，当日涨幅更可能来自资金面 / 情绪 / 板块轮动</div></div>`;
-          return `<div class="ct-grp">${head}`+
-            g.c.it.map(x=>{
-              // 有些快讯（尤其新浪的国务院/部委稿）没有 docurl。渲染成 <a> 会给出
-              // 一个「看着能点、点了没反应」的假链接，所以没链接时用 div。
-              const tag=x.u?'a':'div';
-              return `<${tag} class="ct-it${x.lv==='主'?' on':''}"${x.u?` href="${esc(x.u)}" target="_blank" rel="noopener"`:''}>`+
-              `<div class="ct-l1"><span class="ct-tag ${x.lv==='主'?'ct-lv0':'ct-lv1'}">${x.lv==='主'?'主因':'次要'}</span>`+
-              `<span class="ct-tag ${x.ty==='政策'?'ct-t0':(x.ty==='产业'?'ct-t1':'ct-t2')}">${esc(x.ty||'')}</span>`+
-              `<span class="ct-src">${esc(x.hm||'')} · ${esc(x.m||'')}</span></div>`+
-              `<div class="ct-t">${esc(x.t)}</div></${tag}>`;
-            }).join('')+
-            (g.c.ch?`<div class="ct-why">↳ 关联逻辑：${esc(g.c.ch)}</div>`:'')+
-            `</div>`;
-        }).join('')+`</div>`;
+      html+=ctCardHtml('领涨板块的消息面催化',grps,false);
+    }
+    // 领跌板块的利空催化。与领涨同一套结构与详略，只是：
+    //   · 分组键按跌幅排序（s.down 已经是「最跌在前」）
+    //   · 多两个维度标签（资金估值 / 海外宏观）
+    //   · 每条多「影响方向」与「持续性」两个判断
+    //   · 查过但没有明确催化剂的，明确写成技术性回调 / 资金轮动（用户指定的说法）
+    if(day.s&&day.s.down&&day.s.down.length&&day.s.ctd){
+      const cts=day.s.ctd,seen={},grps=[];
+      day.s.down.forEach(x=>{
+        const c=cts[x.n];
+        const key=(c?c.g:'#'+x.n)+'@@'+(c?c.it.map(i=>i.t).join('|'):'');
+        if(seen[key]!==undefined){const g=grps[seen[key]];g.names.push(x.n);if(x.p<g.p){g.p=x.p;}return;}
+        seen[key]=grps.length;
+        grps.push({names:[x.n],p:x.p,c:c||null});
+      });
+      html+=ctCardHtml('领跌板块的消息面催化',grps,true);
     }
     if(day.e&&day.e.length){
       html+=`<div class="card"><div class="card-title"><span>这一天发生的大事件</span><span class="src">${day.e.length} 条</span></div>`+
@@ -1196,19 +1241,27 @@ function showUpdateInfo(){
     +' 天 A 股板块行情（'+sr[0]+' ~ '+sr[1]+'）\n'
     +'【市场广度】'+(st.breadth_days||0)+' 天个股涨跌家数（沪深 A 股逐只统计，'
     +'剔除北交所）\n'
-    +((st.catalyst_days)?'【板块催化】'+st.catalyst_days+' 天 / '+st.catalyst_items
-      +' 条，取当天新浪 7×24 与同花顺快讯中**驱动**该板块的条目'
+    +((st.catalyst_days)?'【领涨催化】'+st.catalyst_days+' 天 / '+st.catalyst_items
+      +' 条，取当天新浪 7×24 与同花顺快讯中**驱动**该板块上涨的条目'
       +((st.catalyst_none_days)?'，另有 '+st.catalyst_none_days+' 天已核查、确认无催化':'')
+      +'\n':'')
+    +((st.catalyst_dn_days)?'【领跌催化】'+st.catalyst_dn_days+' 天 / '+st.catalyst_dn_items
+      +' 条，逐条给出维度（政策监管 / 基本面 / 龙头个股 / 资金估值 / 海外宏观）、'
+      +'影响方向与持续性'
+      +((st.catalyst_dn_none_days)?'，另有 '+st.catalyst_dn_none_days+' 天已核查、'
+        +'确认无催化剂（界面标注技术性回调 / 资金轮动）':'')
       +'\n':'')
     +'【日历挂值】'+st.cal_linked+' / '+st.cal_items+' 条事件已挂上具体数值\n\n'
     +'【口径说明】涨跌家数按个股统计，不按板块 —— 板块涨跌会被少数权重板块带偏。\n'
     +'数值直接标在日历行上，含实际值 / 前值 / 同比 / 环比；\n'
     +'显示「—」表示该期还没公布或暂时没有可信来源——宁缺勿错，不猜数。\n'
-    +'板块催化只收**能解释上涨的原因**（政策 / 产业动作 / 公司事件），'
-    +'盘中行情播报（「某某板块 13:47 持续拉升」）已剔除；\n'
-    +'只保留涨幅**之前**的消息（时间窗：上一交易日 15:00 → 当天 15:00），'
+    +'板块催化只收**能解释涨跌的原因**（上涨：政策 / 产业动作 / 公司事件；\n'
+    +'下跌：政策监管 / 基本面 / 龙头个股 / 资金估值 / 海外宏观），'
+    +'盘中行情播报（「某某板块 13:47 持续拉升」「XX板块跌超5%」）已剔除；\n'
+    +'只保留涨跌**之前**的消息（时间窗：上一交易日 15:00 → 当天 15:00），'
     +'收盘后发的消息不算当天催化。\n'
-    +'没找到原因的板块会明说「未找到」，不拿相近的新闻凑数。');
+    +'没找到原因的板块会明说「未找到」，不拿相近的新闻凑数 —— '
+    +'领跌侧按技术性回调 / 资金轮动标注。');
 }
 function toggleHint(){
   const h=document.getElementById('hint');

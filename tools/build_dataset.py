@@ -450,10 +450,11 @@ def gen_rule_dates(rule_id, y, m):
 
 
 # ============ 构建历史：精确日期（YYYY-MM-DD 稀疏索引）============
-def build_history(sector, breadth=None, catalysts=None):
+def build_history(sector, breadth=None, catalysts=None, catalysts_down=None):
     """sector: {'YYYY-MM-DD': {...}} 真实 A 股板块行情
        breadth: {'YYYY-MM-DD': {up,down,flat,total}} 个股涨跌家数（沪深 5223 只逐只统计）
-       catalysts: {'YYYY-MM-DD': {板块名: {g,ch,it:[{t,u,m,hm,ty,lv}]}}} 领涨板块的**归因**
+       catalysts: {'YYYY-MM-DD': {板块名: {g,ch,it:[{t,u,m,hm,ty,lv,dir,ps}]}}} 领涨板块的**归因**
+       catalysts_down: 同上结构，但是**领跌**板块的利空归因（挂到 s.ctd）
 
     与旧版的关键区别：不再按 MM-DD 做跨年份聚合。
     某一年某月某日只呈现「这一天真正发生过的事」，没有就是没有。
@@ -467,6 +468,8 @@ def build_history(sector, breadth=None, catalysts=None):
     stats = {"days": 0, "events": 0, "sector_days": 0, "breadth_days": 0,
              "catalyst_days": 0, "catalyst_items": 0, "catalyst_main": 0,
              "catalyst_none_days": 0,
+             "catalyst_dn_days": 0, "catalyst_dn_items": 0, "catalyst_dn_main": 0,
+             "catalyst_dn_none_days": 0,
              "macro_days": 0, "macro_points": 0, "up_days": 0, "up_videos": 0,
              "cal_days": 0, "cal_items": 0, "cal_linked": 0}
 
@@ -505,6 +508,7 @@ def build_history(sector, breadth=None, catalysts=None):
     #    板块带偏（34 个权重板块红着、4000 只个股在跌是常见事），情绪读数要看个股。
     bd = breadth or {}
     ct = catalysts or {}
+    ctd = catalysts_down or {}
     for ymd, v in sector_by_ymd.items():
         up = [{"n": x["name"], "p": x["pct"]}
               for x in v["up"] if not is_noise(x["name"])]
@@ -519,9 +523,12 @@ def build_history(sector, breadth=None, catalysts=None):
         # 催化只挂「确实在界面上出现的领涨板块」：抓取时按 top5 匹配，这里再按
         # 实际展示的 up 名单裁一次，否则会出现「卡片里没有这个板块、却挂着它的消息」。
         shown = {x["n"] for x in up}
+        shown_dn = {x["n"] for x in down}
         has_ct = ymd in ct
+        has_ctd = ymd in ctd
         c = {k: val for k, val in (c or {}).items() if k in shown}
-        if not up and not down and not has_ct:
+        cd = {k: val for k, val in ((ctd.get(ymd)) or {}).items() if k in shown_dn}
+        if not up and not down and not has_ct and not has_ctd:
             continue
         s = {
             "date": ymd,
@@ -544,6 +551,17 @@ def build_history(sector, breadth=None, catalysts=None):
                     1 for x in c.values() for i in x["it"] if i.get("lv") == "主")
             else:
                 stats["catalyst_none_days"] += 1
+        if has_ctd:
+            # 同样：空 dict 也要挂上，含义是「查过了，确实没有明确催化剂」，
+            # 界面据此标注「技术性回调 / 资金轮动」。
+            s["ctd"] = cd
+            if cd:
+                stats["catalyst_dn_days"] += 1
+                stats["catalyst_dn_items"] += sum(len(x["it"]) for x in cd.values())
+                stats["catalyst_dn_main"] += sum(
+                    1 for x in cd.values() for i in x["it"] if i.get("lv") == "主")
+            else:
+                stats["catalyst_dn_none_days"] += 1
         touch(ymd)["s"] = s
 
     # 4) B 站 UP 主观点：按视频发布日期挂到当天
@@ -788,10 +806,13 @@ def main():
     # 注意 v 的值是 {g, ch, it} 结构，条数要数 it —— 写成 sum(len(a) for a in v.values())
     # 会把「键的个数」当条数（每天凭空多出 3 倍）。
     cats = _load("catalysts_daily.json")
-    print(f"[i] 载入板块催化 {len(cats)} 天 / "
+    print(f"[i] 载入板块催化 领涨 {len(cats)} 天 / "
           f"{sum(len(a['it']) for v in cats.values() for a in v.values())} 条")
+    cats_dn = _load("catalysts_down.json")
+    print(f"[i] 载入板块催化 领跌 {len(cats_dn)} 天 / "
+          f"{sum(len(a['it']) for v in cats_dn.values() for a in v.values())} 条")
 
-    days, stats = build_history(sector, breadth, cats)
+    days, stats = build_history(sector, breadth, cats, cats_dn)
     stats["yearRange"] = [min(days).split("-")[0], max(days).split("-")[0]] if days else None
 
     # 必须在写 history.js **之前**裁剪字典表：days 里存的是表索引，
@@ -830,6 +851,8 @@ def main():
         # 广度与催化的覆盖区间，界面上要如实标注「这块只有最近 N 天有」
         "breadthRange": [min(breadth.keys()), max(breadth.keys())] if breadth else None,
         "catalystRange": [min(cats.keys()), max(cats.keys())] if cats else None,
+        "catalystDownRange": ([min(cats_dn.keys()), max(cats_dn.keys())]
+                              if cats_dn else None),
         "stats": stats,
         "indicators": INDICATORS,          # 指标键 -> {n 名称, u 单位}
         # 财经日历的两张字典表：条目只存索引，避免同一个指标名重复存几百次
@@ -852,9 +875,13 @@ def main():
           f"{stats['macro_days']} 天数值 / {stats['sector_days']} 天板块 → {total/1024:.0f}KB")
     print(f"[✓] 个股涨跌家数：覆盖 {stats['breadth_days']} 天"
           f"（{stats['breadth_days']}/{stats['sector_days']} 的板块日有广度）")
-    print(f"[✓] 板块催化：{stats['catalyst_days']} 天有催化 / {stats['catalyst_items']} 条"
+    print(f"[✓] 领涨催化：{stats['catalyst_days']} 天有催化 / {stats['catalyst_items']} 条"
           f"（主因 {stats['catalyst_main']} 条），另有 {stats['catalyst_none_days']} 天"
           f"已核查确认无催化")
+    print(f"[✓] 领跌催化：{stats['catalyst_dn_days']} 天有催化 / "
+          f"{stats['catalyst_dn_items']} 条（主因 {stats['catalyst_dn_main']} 条），"
+          f"另有 {stats['catalyst_dn_none_days']} 天已核查确认无催化"
+          f"（界面标注技术性回调 / 资金轮动）")
     print(f"[✓] 财经日历：{stats['cal_items']} 条 / 覆盖 {stats['cal_days']} 天 / "
           f"{len(cal_names)} 个指标名")
     print(f"[!] 日历挂上实际值：{stats['cal_linked']} 条 "

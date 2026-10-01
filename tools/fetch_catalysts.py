@@ -91,6 +91,11 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
 OUT = os.path.join(DATA, "catalysts_daily.json")
+# 领跌归因单独存一份文件，不塞进 catalysts_daily.json：
+# 那边的 {日期: {板块名: ...}} 结构已被 build_dataset / 界面依赖，
+# 混进「跌」的板块会撞名（同一天一个板块不可能同时领涨领跌，但空 dict 的
+# 「确认无催化」语义会互相污染），分成两份最省事也最不容易出错。
+OUT_DOWN = os.path.join(DATA, "catalysts_down.json")
 SECTORS = os.path.join(DATA, "sector_daily.json")
 # 抓取结果缓存。调权重时唯一省事的办法：抓一次存下来，之后 --reuse 反复重算。
 # 6 分钟的抓取 × 十几次改权重 = 一小时，纯浪费。
@@ -260,6 +265,156 @@ CO_EVENT = [
     "签署",
 ]
 
+# ====================================================================
+# 领跌板块：利空归因子弹词表（与领涨那套**镜像但不共用**）
+#
+# 领涨要的是「因」（政策落地 / 产业动作 / 供给变化），领跌要的是「空」
+# （监管收紧 / 基本面恶化 / 龙头暴雷 / 资金撤离 / 海外扰动）。极性相反，
+# 所以不能复用 classify() —— 它第一件事就是把负面词全杀掉。
+#
+# 五个维度对应用户要求的口径：
+#   ① 政策监管  ② 基本面（行业基本面 + 业绩预期）  ③ 龙头个股负面事件
+#   ④ 资金估值（资金流向 + 估值压力）  ⑤ 海外宏观
+# 一条消息命中不到任何一条 → 判定「没有明确催化剂」，界面标注
+# 技术性回调 / 资金轮动，而不是硬凑一条不相干的新闻。
+# ====================================================================
+# ① 政策与监管变化
+BEAR_POLICY = [
+    # ⚠️ 不能只写「监管」两个字：巴西监管机构批准法航荷航交易 → 靠「监管」命中，
+    # 一条巴西民航并购批文当上了 A 股港口航运的利空。必须收**带动作**的短语。
+    "监管要求", "监管趋严", "加强监管", "从严监管", "监管处罚", "被监管",
+    "监管约谈", "监管新规", "监管调查", "金融监管总局",
+    "行政处罚", "处罚", "罚款", "立案", "立案调查", "被查",
+    "约谈", "窗口指导", "通报批评", "被通报", "责令", "违规", "涉嫌违规",
+    # 「整改」必须带监管主体，否则「西捷航空：将执行建议的整改行动」
+    # 会靠这两个字当上 A 股港口航运的利空
+    "责令整改", "要求整改", "整改通知", "整改要求",
+    "新规", "征求意见稿", "管理办法", "限制出口", "出口限制", "限制进口", "受限",
+    "禁令", "禁止", "叫停", "规范整顿", "专项整治", "风险提示",
+    # 贸易调查类：**337调查**是美国 ITC 对中国存储/半导体厂商最典型的打压手段，
+    # 「美国ITC正式对DRAM设备及其下游产品启动337调查」正是 09-28 元件 -6.84% 的
+    # 真凶，而它既不含「立案」也不含「调查」两字，整条被漏掉。
+    "337调查", "启动337", "反倾销调查", "反垄断调查", "贸易调查", "启动调查",
+    "安全审查", "国家安全审查", "出口许可", "许可审查",
+    "集采", "医保谈判", "控费", "限价", "指导价", "集中带量",
+    "反垄断", "反倾销", "反补贴", "加征关税", "关税", "出口管制", "制裁",
+    "实体清单", "补贴退坡", "退坡", "取消补贴", "暂停审批", "提高准入门槛",
+    "监管工作函", "问询函", "关注函", "警示函", "监管函",
+]
+# ② 行业基本面与业绩预期（价格 / 供需 / 盈利）
+BEAR_FUND = [
+    "需求疲软", "需求下滑", "需求不足", "需求走弱", "需求萎缩", "终端需求",
+    "产能过剩", "供过于求", "供大于求", "过剩", "价格战", "价格下跌", "价格下调",
+    "跌价", "降价", "降价潮", "招标降价", "集采降价", "杀价",
+    "业绩预亏", "预亏", "续亏", "首亏", "亏损", "由盈转亏",
+    "净利下滑", "净利下降", "净利润下滑", "净利润下降", "业绩不及预期",
+    "业绩下修", "下修业绩", "指引下调", "下调盈利预测", "下调业绩", "业绩变脸",
+    "库存高企", "累库", "库存积压", "库存压力", "去化放缓",
+    "开工率下降", "产能利用率下降", "订单减少", "订单下滑", "在手订单下降",
+    "销量下滑", "销量下降", "营收下滑", "营收下降", "毛利下滑", "毛利率下降",
+    "成本上升", "成本压力", "景气度下行", "增速放缓", "增长放缓", "低于预期",
+    # 「同比下降」「环比下降」**故意不收**：那是**数据发布**的说法，不是事件。
+    # 「交通运输部：上周港口吞吐量27878.1万吨，环比下降1.36%」就是靠它混进来的 ——
+    # 一条周度统计读数被当成下跌原因。真要看业绩预期，靠「预亏 / 下修 / 指引下调」。
+]
+# ③ 龙头个股负面事件
+BEAR_COMPANY = [
+    "减持", "拟减持", "大股东减持", "减持计划", "增持计划终止",
+    "预亏", "业绩变脸", "商誉减值", "资产减值", "计提减值",
+    "诉讼", "仲裁", "被起诉", "专利侵权", "侵权", "垄断",
+    "召回", "安全事故", "生产事故", "停工", "停产", "火灾", "爆炸", "污染",
+    "环保处罚", "财务造假", "涉嫌", "被查", "退市", "ST", "*ST", "破发",
+    "高管离职", "辞职", "质押", "冻结", "被执行", "失信", "违规担保", "资金占用",
+    "下调评级", "下调目标价", "被下调", "评级下调",
+    "终止重组", "重组失败", "终止定增", "定增失败", "终止收购", "终止",
+    "业绩预告修正", "修正业绩", "下修",
+]
+# ④ 资金流向与估值压力
+# 「减持」不放在这里 —— 它是公司行为，放这儿会把「某某：股东拟减持」误判成资金面。
+BEAR_FLOW = [
+    "净流出", "资金流出", "主力资金", "主力净流出", "北向资金", "北向净卖出",
+    "融资余额", "两融余额", "融资盘", "杠杆资金",
+    "获利了结", "获利回吐", "筹码松动", "拥挤度", "交易拥挤",
+    "估值压力", "估值偏高", "估值高位", "高估值", "估值泡沫", "杀估值", "估值回落",
+    "高位回调", "超买", "泡沫",
+]
+# ⑤ 海外或宏观扰动
+# ⚠️ 一律收**短语**，不收「美债」「关税」「汇率」这种单词。
+# 收单词的实测后果：「原油价格上涨推高美债收益率，金价下跌」靠「美债」两个字
+# 命中，于是**油价上涨**这条利多被当成了油气板块的**利空** —— 方向完全反了。
+# 宏观变量必须明确朝不利的方向走才承认（收益率**上行**、人民币**贬值**、外需**走弱**）。
+BEAR_MACRO = [
+    "美联储加息", "加息预期", "加息", "鹰派", "滞胀", "通胀高企", "通胀超预期",
+    "经济衰退", "衰退担忧", "经济下行", "全球经济下行", "硬着陆",
+    "海外需求走弱", "外需走弱", "外需疲软", "海外需求疲软", "出口下滑", "外需下滑",
+    "加征关税", "关税摩擦", "贸易摩擦", "关税上调", "关税逆风",
+    "地缘冲突", "地缘紧张", "局势升级", "武装冲突", "制裁", "出口管制",
+    "供应链中断", "人民币贬值", "汇率贬值", "贬值压力",
+    "美债收益率上行", "收益率上行", "国债收益率上行", "流动性收紧",
+    "PMI回落", "PMI下行", "PMI低于荣枯", "非农不及预期", "失业率上升",
+    "美股大跌", "美股重挫", "全球股市大跌", "海外市场动荡", "风险偏好下降",
+    # 费城半导体指数是 A 股电子链的**情绪锚**，跌了就是实打实的海外扰动。
+    # ⚠️ 必须写成「跌」的定向短语：只收「费城半导体」四个字的话，
+    # 「费城半导体指数日内**涨**2%」会被当成 09-30 元件下跌 -4.03% 的原因 ——
+    # 方向和事实完全相反。指数类消息一律要求带跌，不带跌的一律不收。
+    "费城半导体指数跌", "费城半导体指数收跌", "费城半导体指数日内跌",
+    "费半跌", "费城半导体下跌",
+    "芯片股大跌", "芯片股重挫", "半导体股大跌",
+    "存储板块普跌", "半导体股普跌", "科技股大跌", "科技股重挫",
+]
+# 否认 / 辟谣：公司出来否认的消息不是利空，别当成下跌原因
+BEAR_DENY = ["没有", "并未", "不存在", "不属实", "传闻不实", "辟谣", "否认",
+             "澄清", "暂无", "未收到", "不涉及", "不予置评", "无此事",
+             "不被视为", "不构成", "无重大影响", "影响有限", "风险可控",
+             # 企稳/回升/回暖是在**好转**，不能当下跌原因
+             "企稳", "回升", "回暖", "止跌", "修复"]
+# 纯数据发布的豁免：标题既是「数据读数」又有这类硬利空时，按事件算而不是按数据算
+# （「XX：预计前三季度净亏损5亿元，同比下降120%」里的「同比下降」不能把这条例毙）
+BEAR_EXEMPT = ["预亏", "亏损", "业绩下修", "下修", "商誉减值", "资产减值", "减值",
+               "立案", "处罚", "制裁", "禁令", "关税", "价格战", "召回", "退市",
+               "ST", "减持", "诉讼", "停产", "安全事故", "下调评级", "下调目标价",
+               "业绩不及预期", "低于预期", "反倾销", "出口管制"]
+# 海外消息里**只有明确冲着中国来的**才算得上 A 股板块的利空。
+# 「美国FTC为美国农民争取到降低农药价格」是美国的反垄断案，跟 A 股种植业没关系；
+# 「俄罗斯延长柴油出口禁令」影响的是全球柴油，不是 A 股油气。
+# 没有这些词就一律吃到海外降权 —— 海外宏观维度因此主要靠「宏观」而非「外国的行业新闻」。
+CHINA_HIT = ["对华", "中国", "中方", "中资", "中概", "境内", "A股",
+             "出口管制", "制裁", "关税", "实体清单", "限制出口", "反倾销",
+             "反补贴", "贸易摩擦", "美方对华", "对华出口",
+             # 337 调查：标题通常不写「中国」（它针对的是具体被告企业），
+             # 但这类贸易调查打的就是中国厂商，不豁免就永远收不进来。
+             "337", "337调查"]
+# 海外宏观豁免海外降权的**额外**条件：必须是全球定价变量本身在动。
+# 只凭「海外宏观是用户要的维度」就全免的后果：「花旗、富国银行紧随美联储加息之后
+# 发行投资级债券」靠「富国**银行**」当上了 A 股银行板块的利空；
+# 「道明证券：日本央行加快加息」当上了 A 股证券板块的利空 —— 都是外国的行业新闻，
+# 不是 A 股的下跌原因。所以要求标题里出现金价/油价/铜价/股指这类**全球锚**。
+GLOBAL_MOVE = ["金价", "黄金", "现货黄金", "白银", "原油", "油价", "布伦特", "WTI",
+               "铜价", "伦铜", "LME", "铝价", "锂价", "天然气价", "大宗商品",
+               "费城半导体", "纳指", "纳斯达克", "标普", "道指", "美股", "全球股市",
+               "美元指数", "美债收益率", "十年期美债"]
+# 领跌侧的「结果播报」要单独识别：领涨那套 QUOTE_ONLY 收的是「涨」的说法
+DOWN_QUOTE = ["跌停潮", "集体下跌", "板块走弱", "板块跳水", "全线飘绿", "普跌"]
+# 下跌语境的「供给端」= 供给变多 / 需求变少。和上涨侧的 SUPPLY 不是一回事：
+# 「扩产」在涨的语境里是利好（需求好才扩产），在跌的语境里是利空（产能过剩）。
+BEAR_SUPPLY = ["产能过剩", "供过于求", "供大于求", "过剩", "扩产", "新增产能",
+               "产能释放", "投产", "累库", "库存高企", "库存积压", "库存压力",
+               "降价", "价格战", "杀价", "需求疲软", "需求下滑", "需求不足",
+               "需求萎缩", "订单减少", "订单下滑", "开工率下降", "出口下滑"]
+
+# 影响方向 / 持续性：每条催化都要给一句判断（用户明确要求）
+# 直接作用于该板块（板块名直路、官方板块标签，或政策/基本面/龙头这类硬因素）才算「利空」，
+# 只通过情绪、外盘、资金面传导的算「偏空」——不夸大。
+DIR_STRONG = {"政策监管", "基本面", "龙头个股"}
+PERSIST_LONG = ["长期", "结构性", "趋势", "常态化", "全面", "永久", "制度",
+                "长效", "根本", "战略", "全面收紧"]
+PERSIST_SHORT = ["短期", "临时", "暂时", "暂停", "一次性", "阶段性", "本月",
+                 "本周", "当日", "盘中", "传闻", "消息称", "据悉", "技术性"]
+# 各维度的**默认**持续性，标题里出现上面两类词才会被改写
+PERSIST_DEF = {"政策监管": "中期", "基本面": "中期", "龙头个股": "短期",
+               "资金估值": "短期", "海外宏观": "短期",
+               "政策": "中期", "产业": "中期", "公司": "短期"}
+
 # 海外标记：只有海外、不涉及国内的条目标出来降权（不是全删 —— 金价/油价/外盘芯片
 # 本来就是 A 股相关板块的真实驱动，见 SCORE 里 strong 关键词的处理）
 FOREIGN = ["美国", "欧洲", "欧盟", "日本", "韩国", "印度", "巴西", "俄罗斯", "英国",
@@ -395,8 +550,13 @@ GROUPS = {
     "通信": {
         "sec": ["通信设备", "通信服务"],
         "kw": ["光模块", "光通信", "5G", "6G", "运营商", "北斗", "交换机", "海缆",
-               "光纤", "卫星互联网", "移动通信", "电信", "算力网", "通信网"],
-        "strong": ["光模块", "光通信", "运营商", "海缆", "卫星互联网", "算力网"],
+               "光纤", "卫星互联网", "移动通信", "电信", "算力网", "通信网",
+               "中国移动", "中国电信", "中国联通", "三大运营商"],
+        "strong": ["光模块", "光通信", "运营商", "海缆", "卫星互联网", "算力网",
+                   # 三大运营商的**具体名字**也要算定义性关键词：
+                   # 「中国移动、中国电信、中国联通，集中叫停0元购机」里并没有
+                   # 「运营商」四个字，漏了它们这条真催化就被锚点闸误杀了。
+                   "中国移动", "中国电信", "中国联通", "三大运营商"],
         "ch": "通信设备主要跟着云厂商与运营商的资本开支、以及光模块速率升级周期走，"
               "海外大厂加单是最有力的信号。",
     },
@@ -492,6 +652,15 @@ GROUPS = {
         "kw": ["银行", "存款利率", "净息差", "LPR", "降准", "降息", "信贷", "不良率",
                "社融", "存款准备金", "存款挂牌利率", "银行股"],
         "strong": ["净息差", "存款利率", "LPR", "降准", "存款准备金"],
+        # 「银行」两个字太容易被跨词命中：
+        # 「科陆电子：涉4.18亿元担保诉讼，7个**银行**账户被冻结」
+        # 「富煌钢构：280个**银行**账户被冻结」—— 两家非银公司的账户冻结
+        # 都被算成了银行板块的利空。凡是「银行账户」一律作废直路。
+        "neg": ["银行账户", "账户冻结", "账户被冻结", "银行转账", "银行卡", "分行"],
+        # 默认 neg 只废「反路」，直路（板块名出现在标题里）仍然有效。
+        # 但「银行」这两个字的直路本身就是陷阱 —— 任何公司公告里出现「银行账户」
+        # 「XX分行」都会命中。所以银行组要求 neg 连直路一起废掉。
+        "neg_all": True,
         "ch": "银行看净息差与资产质量：降息/降准、存款利率下调与信贷投放节奏决定息差"
               "走向，高股息属性则让它在利率下行期获得配置价值。",
     },
@@ -500,6 +669,9 @@ GROUPS = {
         "kw": ["券商", "证券", "保险", "保费", "信托", "基金", "期货", "并购重组",
                "成交额", "开户", "两融", "权益投资", "保险资金"],
         "strong": ["券商", "证券", "保费", "并购重组", "保险资金", "两融"],
+        # 「证券账户」是公司回购/减持用的账户，不是券商板块的事：
+        # 「ST金花：回购专用证券账户拟减持…」曾当上保险板块的利空。
+        "neg": ["证券账户"],
         "ch": "券商看市场成交额与政策（并购重组、注册制），保险看保费增速与投资端收益率；"
               "成交额放大是最直接的情绪催化。",
     },
@@ -542,6 +714,9 @@ GROUPS = {
         "kw": ["免税", "旅游", "酒店", "景区", "零售", "消费", "文旅", "节假日",
                "服务消费", "消费信贷", "出行", "购物", "商超", "离岛", "贸易"],
         "strong": ["免税", "旅游", "文旅", "服务消费", "消费信贷", "景区", "酒店", "零售"],
+        # 「消费」会跨词命中「**消费**者」：「钟薛高：降价是为了回应消费者」
+        # 靠这三个字当上了旅游及酒店板块的利空 —— 雪糕降价和酒店没关系。
+        "neg": ["消费者", "消费电子", "消费品以旧换新"],
         "ch": "消费服务看居民消费意愿与促消费政策、假期出行数据：政策弹性大，"
               "但持续性最终取决于收入预期，属高贝塔的情绪板块。",
     },
@@ -617,6 +792,12 @@ for _g, _v in GROUPS.items():
 # 打分表
 # 政策给最高基分：部委/国务院级别的动作是「因」，其余多是「果」或个股噪音。
 TY_SCORE = {"政策": 6, "产业": 2, "公司": 1}
+# 领跌侧的基分。**资金估值给最低**（资金流出和「板块下跌」几乎是同一件事的两种说法，
+# 解释力弱、容易变成把结果当原因），政策监管给最高（集采降价、立案调查这类是硬利空）。
+# 注意「资金估值」基分 2 意味着它**必须**再吃到直路(+3)或官方标签(+4)才够 MIN_SCORE，
+# 也就是只有「电子板块主力资金净流出 120 亿」这种**点名板块**的才留得下，
+# 泛市场的「两市主力资金净流出」会被自然淘汰 —— 这正是想要的效果。
+TY_SCORE_DOWN = {"政策监管": 6, "基本面": 4, "龙头个股": 4, "海外宏观": 3, "资金估值": 2}
 W_DIRECT = 3      # 板块名直接出现在标题
 W_TAG = 4         # 同花顺官方板块标注命中
 W_STRONG = 2      # 命中该行业组的定义性关键词
@@ -899,6 +1080,98 @@ def kw_in(t, k):
     return k in t
 
 
+# 领跌侧的「栏目噪音」比领涨侧少一项：公告/股东减持/问询函/立案调查
+# 在下跌语境里**恰恰是**要找的东西，不能当噪音剔掉。
+TITLE_NOISE_DOWN = [w for w in TITLE_NOISE if w not in (
+    "公告", "股东减持", "监管工作函", "问询函", "关注函", "警示函", "立案调查", "异动")]
+
+
+def classify_down(title):
+    """把标题归到「导致下跌」的五个维度之一；没有明确利空信号返回 None。
+
+    与 classify() 是镜像关系，但**不能合并**：
+      · classify() 第一件事就是杀掉所有负面词（它要解释「涨」）；
+      · 这里反过来，**必须**命中一条负面信号才承认它是催化。
+    命中不到 → 界面标注「技术性回调 / 资金轮动」，不硬凑。
+
+    维度顺序也有讲究：资金面先判（这类标题常带「板块」二字，容易被播报闸误杀），
+    龙头个股的「公司名：动作」形态要在泛基本面之前判，否则
+    「宁德时代：三季度净利同比下滑」会被泛泛的「业绩」归类吃掉。
+    """
+    t = title or ""
+    # 收评/午评/盘面播报：整条是行情复盘，无条件剔除
+    if any(w in t for w in ["收评", "午评", "早盘播报", "盘中播报", "收盘播报",
+                            "盘面播报", "收盘快评", "两市播报"]):
+        return None
+    if any(w in t for w in TITLE_NOISE_DOWN):
+        return None
+    # 否认/辟谣：「公司：没有减持计划」不是利空
+    if any(w in t for w in BEAR_DENY):
+        return None
+    # 海外官员表态：驱动不了 A 股板块（和领涨侧同一个判据）
+    if any(w in t for w in FOREIGN_VOICE) and is_overseas(t):
+        return None
+    # 纯数据发布：是「描述过去」，不是「驱动未来」（和领涨侧同一个判据）。
+    # 「交通运输部：上周港口吞吐量27878.1万吨，环比下降1.36%」就是典型 —— 周度读数
+    # 不构成下跌原因。但带硬利空（预亏/处罚/制裁…）的算事件，见 BEAR_EXEMPT。
+    if any(w in t for w in DATA_ONLY) and not any(w in t for w in BEAR_EXEMPT):
+        return None
+    # 结果播报：「半导体板块跌超5%」「XX概念跌幅居前」——是跌本身，不是跌的原因
+    if re.search(r"(板块|概念)[^，。；、]{0,12}(跌|跌停|大跌|下挫|跳水|走弱|"
+                 r"领跌|跌幅居前|杀跌|回落|低迷)", t):
+        return None
+    if any(w in t for w in DOWN_QUOTE):
+        return None
+
+    # ④ 资金流向与估值压力
+    if any(w in t for w in BEAR_FLOW):
+        return "资金估值"
+    # ① 政策与监管变化
+    if any(w in t for w in BEAR_POLICY):
+        return "政策监管"
+    # ③ 龙头个股负面事件（`公司名：动作` 形态优先于泛基本面）
+    m = re.match(r"^([^：:]{2,14})[：:]", t)
+    if m and not any(w in m.group(1) for w in GOV_PREFIX) \
+            and any(w in t for w in BEAR_COMPANY):
+        return "龙头个股"
+    # ⑤ 海外或宏观扰动
+    if any(w in t for w in BEAR_MACRO):
+        return "海外宏观"
+    # ③ 不带冒号的公司负面
+    if any(w in t for w in BEAR_COMPANY):
+        return "龙头个股"
+    # ② 行业基本面与业绩预期
+    if any(w in t for w in BEAR_FUND):
+        return "基本面"
+    return None
+
+
+def persist_of(t, ty):
+    """持续性判断：短期 / 中期 / 长期。
+
+    先看标题里的显式时间限定词，没有才退回维度默认值。
+    「暂停」「阶段性」这类词能救回一批被默认值判成中期的条目。
+    """
+    if any(w in t for w in PERSIST_LONG):
+        return "长期"
+    if any(w in t for w in PERSIST_SHORT):
+        return "短期"
+    return PERSIST_DEF.get(ty, "中期")
+
+
+def dir_of(ty, direct, tag, down=True):
+    """影响方向：利空 / 偏空（领涨侧对称地是 利好 / 偏多）。
+
+    直接作用于该板块（板块名直路、官方板块标签，或政策/基本面/龙头这类硬因素）才说
+    「利空」；只通过情绪、外盘、资金面传导的说「偏空」。
+    不夸大 —— 一条「美股科技股大跌」对 A 股电子是**偏空**不是**利空**。
+    """
+    hard = direct or tag or ty in DIR_STRONG
+    if down:
+        return "利空" if hard else "偏空"
+    return "利好" if hard else "偏多"
+
+
 def is_overseas(t):
     """纯海外消息：出现外国主体、且没有任何国内主体。"""
     if not any(w in t for w in FOREIGN):
@@ -939,11 +1212,18 @@ def similar(a, b):
 # ====================================================================
 # 匹配
 # ====================================================================
-def match_day(day, sectors, window):
-    """为当天 top5 领涨板块各找催化。sectors = [{"name","pct"}, ...]"""
+def match_day(day, sectors, window, pol="up"):
+    """为当天 top5 领涨/领跌板块各找催化。sectors = [{"name","pct"}, ...]
+
+    pol="up"   → 找「为什么涨」，用 classify()  + TY_SCORE
+    pol="down" → 找「为什么跌」，用 classify_down() + TY_SCORE_DOWN
+    检索路（直路 / 反路 / 官方标签）与打分规则两侧共用，只有极性相关的部分分叉。
+    """
     out = {}
     if not window:
         return out
+    down = pol == "down"
+    ty_score = TY_SCORE_DOWN if down else TY_SCORE
     # 先剔噪再取前 5 —— 顺序反了会和 build_dataset 对不上：
     # 那边是「过滤掉涨停/连板这类概念板块之后取前 5」，这边若先取前 5 再剔噪，
     # 两边算出的不只是同一批板块，抓来的催化有一半会被下游丢掉。
@@ -956,6 +1236,7 @@ def match_day(day, sectors, window):
         gkws = GROUPS[grp]["kw"] if grp else []
         gstrong = GROUPS[grp]["strong"] if grp else []
         gneg = GROUPS[grp].get("neg") or [] if grp else []
+        neg_all = bool(grp and GROUPS[grp].get("neg_all"))
 
         cands = []
         for it in window:
@@ -967,8 +1248,10 @@ def match_day(day, sectors, window):
             # neg：行业组里的**假命中**。例：农业组的「种植」会被「种植牙」误命中，
             # 但种植牙是医药话题。命中 neg 就废掉这个组的反路（直路仍然有效）。
             neg_hit = any(w in t for w in gneg)
-            # 直路：板块名出现在标题里
-            direct = name in t
+            # 直路：板块名出现在标题里。
+            # neg_all=True 的组（目前只有「银行」）连直路一起废：板块名本身就是
+            # 常用词时，「XX银行账户被冻结」这种直路命中全是噪音。
+            direct = (name in t) and not (neg_hit and neg_all)
             # 反路：标题命中该板块所属行业组的关键词。
             # 注意要收全部命中再判断 strong —— 只取第一个命中是不够的：
             # 「默沙东PD-1…单抗注射液在华获批」先命中「单抗」（非定义词）就判成弱相关，
@@ -979,22 +1262,44 @@ def match_day(day, sectors, window):
             if not (direct or kw_hit or tag):
                 continue
 
-            ty = classify(t)
+            ty = classify_down(t) if down else classify(t)
             if ty is None:
                 continue
 
             strong = any(k in gstrong for k in hits)
+            # 领跌侧多一道「板块锚点」闸：必须点名板块（直路）、被官方标注（tag），
+            # 或命中该行业的定义性关键词。光靠一个泛泛的组词（「消费」「银行」）
+            # 就挂上去，是钟薛高降价 → 旅游酒店、科陆电子账户冻结 → 银行 这类笑话的根源。
+            # 领涨侧不加：那边已经跑了很多轮、口径是验证过的，不为了对称去动它。
+            if down and not (direct or tag or strong):
+                continue
             # 供给端变化是周期板块真正的主线，单独加权；券商研报只解释不驱动，降权。
             # 顺序上先判研报：一篇「瑞银预计美光 DRAM 供给不足」既含「供给」也含「预计」，
             # 它本质是研报观点，不该靠「供给」二字拿到供给端的分。
             research = any(w in t for w in RESEARCH)
-            supply = (not research) and any(w in t for w in SUPPLY)
-            # 纯海外降权。**全球定价行业也只在「确有供给端动作」时才豁免** ——
-            # 早先写成「命中定义性关键词就豁免」，结果
-            # 「英国央行贝利：高油价持续时间越久，维持银行利率不加息的立场就越难」
-            # （跨词命中「油价」）当上了油气板块的主因。外国官员的表态驱动不了 A 股板块。
-            ov = is_overseas(t) and not (grp in GLOBAL_DRIVEN and supply)
-            s = TY_SCORE[ty]
+            if down:
+                # 下跌语境里「供给端」指的是**供给变多 / 需求变少**（产能过剩、累库、价格战），
+                # 和上涨语境的「扩产」不是一回事，所以换一张表。
+                supply = (not research) and any(w in t for w in BEAR_SUPPLY)
+                # 领跌侧的海外豁免，宁紧勿松，只有三种情形：
+                #   · 确有供需侧恶化信号（产能过剩 / 累库 / 价格战…）
+                #   · 政策监管类但**明确冲着中国来**（对华关税 / 出口管制 / 制裁 / 337）
+                #   · 海外宏观维度本身（用户点名要的维度；词表已收紧成短语，
+                #     靠「加息预期」「费城半导体」这种明确不利表述才能进来）
+                # 早先写成「政策监管一律豁免」，结果美国 FTC 的农药反垄断案、
+                # 俄罗斯柴油出口禁令、巴西批准法航并购，全成了 A 股板块的利空。
+                ov = is_overseas(t) and not (
+                    supply
+                    or (ty == "政策监管" and any(w in t for w in CHINA_HIT))
+                    or (ty == "海外宏观" and any(w in t for w in GLOBAL_MOVE)))
+            else:
+                supply = (not research) and any(w in t for w in SUPPLY)
+                # 纯海外降权。**全球定价行业也只在「确有供给端动作」时才豁免** ——
+                # 早先写成「命中定义性关键词就豁免」，结果
+                # 「英国央行贝利：高油价持续时间越久，维持银行利率不加息的立场就越难」
+                # （跨词命中「油价」）当上了油气板块的主因。外国官员的表态驱动不了 A 股板块。
+                ov = is_overseas(t) and not (grp in GLOBAL_DRIVEN and supply)
+            s = ty_score[ty]
             if direct:
                 s += W_DIRECT
             if tag:
@@ -1017,6 +1322,8 @@ def match_day(day, sectors, window):
                 "hm": f"{it['d'][5:]} {it['hm']}", "d": it["d"], "hm0": it["hm"],
                 "ty": ty, "s": s,
                 "src": "tag" if tag else ("direct" if direct else "kw"),
+                # 影响方向 + 持续性：用户要求每条催化都给一句判断
+                "dir": dir_of(ty, direct, tag, down), "ps": persist_of(t, ty),
             })
 
         if not cands:
@@ -1084,18 +1391,23 @@ def main():
     # 会静默地长期没有催化（而且不会报错）。漏了就在这里补 GROUPS。
     seen_names = set()
     for v in sec.values():
-        for x in (v.get("up") or []):
-            if not is_noise(x["name"]):
-                seen_names.add(x["name"])
+        for arr in (v.get("up") or [], v.get("down") or []):
+            for x in arr:
+                if not is_noise(x["name"]):
+                    seen_names.add(x["name"])
     uncovered = sorted(seen_names - set(GROUP_OF_SECTOR))
     print(f"[i] 行业组覆盖自检：板块名 {len(seen_names)} 个，未映射 {len(uncovered)} 个"
           + (f" → {uncovered}" if uncovered else " ✓"))
 
-    old = {}
+    old, old_dn = {}, {}
     if os.path.exists(OUT):
         with open(OUT, encoding="utf-8") as f:
             old = json.load(f)
-        print(f"[0/4] 已有催化数据 {len(old)} 天")
+    if os.path.exists(OUT_DOWN):
+        with open(OUT_DOWN, encoding="utf-8") as f:
+            old_dn = json.load(f)
+    if old or old_dn:
+        print(f"[0/4] 已有催化数据 领涨 {len(old)} 天 / 领跌 {len(old_dn)} 天")
 
     today = dt.datetime.now(CN).date()
     if probe:
@@ -1141,36 +1453,43 @@ def main():
         except Exception as e:  # noqa
             print(f"      [!] 语料缓存写入失败（不影响本次）：{e}")
 
-    print(f"[3/4] 按领涨板块归因（{len(targets)} 个交易日）...")
+    print(f"[3/4] 按领涨 / 领跌板块归因（{len(targets)} 个交易日）...")
     win_stat = {}
     if probe:
         for day in targets:
             p = prev_day(days, day)
             win = window_items(by_day, day, p)
-            m = match_day(day, sec[day]["up"], win)
-            print(f"\n{'='*76}\n{day} 领涨 {[(x['name'], x['pct']) for x in sec[day]['up'][:5] if not is_noise(x['name'])]}")
-            print(f"窗口 [{p} 15:00 → {day} 15:00] · 条目 {len(win)} · 命中板块 {len(m)}")
-            for nm, v in m.items():
-                print(f"\n  ◆ {nm}  「{v['g']}」")
-                print(f"    逻辑：{v['ch']}")
-                for x in v["it"]:
-                    print(f"    [{x['lv']}][{x['ty']}][s={x['s']}][{x['hm']}][{x['src']}][{x['m']}] {x['t']}")
-            miss = [x["name"] for x in sec[day]["up"][:5]
-                    if not is_noise(x["name"]) and x["name"] not in m]
-            if miss:
-                print(f"\n  ○ 未找到消息面催化：{'、'.join(miss)}")
-            win_stat[day] = (len(win), len(m))
+            for pol, label, arr in (("up", "领涨", sec[day]["up"]),
+                                    ("down", "领跌", sec[day]["down"])):
+                m = match_day(day, arr, win, pol=pol)
+                top5 = [(x["name"], x["pct"]) for x in arr[:5] if not is_noise(x["name"])]
+                print(f"\n{'='*76}\n{day} {label} {top5}")
+                print(f"窗口 [{p} 15:00 → {day} 15:00] · 条目 {len(win)} · 命中板块 {len(m)}")
+                for nm, v in m.items():
+                    print(f"\n  ◆ {nm}  「{v['g']}」")
+                    print(f"    逻辑：{v['ch']}")
+                    for x in v["it"]:
+                        print(f"    [{x['lv']}][{x['ty']}][{x['dir']}·{x['ps']}]"
+                              f"[s={x['s']}][{x['hm']}][{x['src']}][{x['m']}] {x['t']}")
+                miss = [x["name"] for x in arr[:5]
+                        if not is_noise(x["name"]) and x["name"] not in m]
+                if miss:
+                    tail = ("（标注为技术性回调 / 资金轮动）" if pol == "down" else "")
+                    print(f"\n  ○ 未找到消息面催化：{'、'.join(miss)}{tail}")
+            win_stat[day] = (len(win), 0)
         return
 
-    out = dict(old)
+    out, out_dn = dict(old), dict(old_dn)
     hit_days = dropped = none_days = 0
+    dn_hit = dn_dropped = dn_none = 0
     for day in targets:
         p = prev_day(days, day)
         if not p:
             continue
         win = window_items(by_day, day, p)
         win_stat[day] = len(win)
-        m = match_day(day, sec[day]["up"], win)
+        m = match_day(day, sec[day]["up"], win, pol="up")
+        md = match_day(day, sec[day]["down"], win, pol="down")
         if len(win) < MIN_NEWS_TO_DROP:
             # 窗口内新闻太少（抓取残缺 / 那天本来就是假期）→ 不敢下任何结论，保持原样
             continue
@@ -1178,38 +1497,60 @@ def main():
         # 空 dict 的含义是「这天查过了，确实没有催化」。界面靠它区分
         # 「确认无催化」和「这天根本没跑过」—— 少了这个标记，老交易日会一律显示
         # 「未找到消息面催化」，看起来像功能坏了。
-        had = bool(out.get(day))
-        out[day] = m
-        if m:
-            hit_days += 1
-        elif had:
-            dropped += 1
-        else:
-            none_days += 1
+        for store, got, was in ((out, m, bool(out.get(day))),
+                                (out_dn, md, bool(out_dn.get(day)))):
+            store[day] = got
+            if got:
+                if store is out:
+                    hit_days += 1
+                else:
+                    dn_hit += 1
+            elif was:
+                if store is out:
+                    dropped += 1
+                else:
+                    dn_dropped += 1
+            else:
+                if store is out:
+                    none_days += 1
+                else:
+                    dn_none += 1
 
     # 只保留最近 N 天，别让文件无限长大
     keep_floor = (today - dt.timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
     out = {d: v for d, v in out.items() if d >= keep_floor}
+    out_dn = {d: v for d, v in out_dn.items() if d >= keep_floor}
 
-    with open(OUT, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    for path, data in ((OUT, out), (OUT_DOWN, out_dn)):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
 
-    total = sum(len(v["it"]) for d in out.values() for v in d.values())
-    main_n = sum(1 for d in out.values() for v in d.values()
-                 for x in v["it"] if x["lv"] == "主")
-    blank = sum(1 for d, v in out.items() if not v)
-    print(f"[4/4] 写出 {OUT}")
-    print(f"      覆盖 {len(out)} 天（其中 {blank} 天确认无催化）/ {total} 条催化"
-          f"（主因 {main_n} 条）/ 本次命中 {hit_days} 天 / 撤回 {dropped} 天 / "
-          f"首次判定无催化 {none_days} 天 / 体积 {os.path.getsize(OUT)/1024:.0f}KB")
-    for d in sorted(out)[-3:]:
-        if not out[d]:
-            print(f"      {d}: （确认无消息面催化）")
-            continue
+    def recap(path, data, label, hit, drop, none):
+        total = sum(len(v["it"]) for d in data.values() for v in d.values())
+        main_n = sum(1 for d in data.values() for v in d.values()
+                     for x in v["it"] if x["lv"] == "主")
+        blank = sum(1 for d, v in data.items() if not v)
+        print(f"[4/4] 写出 {path}")
+        print(f"      {label}：覆盖 {len(data)} 天（其中 {blank} 天确认无催化）/ "
+              f"{total} 条催化（主因 {main_n} 条）/ 本次命中 {hit} 天 / "
+              f"撤回 {drop} 天 / 首次判定无催化 {none} 天 / "
+              f"体积 {os.path.getsize(path)/1024:.0f}KB")
+
+    recap(OUT, out, "领涨", hit_days, dropped, none_days)
+    recap(OUT_DOWN, out_dn, "领跌", dn_hit, dn_dropped, dn_none)
+    for d in sorted(out)[-2:]:
         print(f"      {d}:")
+        if not out[d]:
+            print("         （确认无消息面催化）")
         for name, v in out[d].items():
             x = v["it"][0]
-            print(f"        {name} ← [{x['lv']}][{x['ty']}][{x['hm']}] {x['t'][:42]}")
+            print(f"        ↑ {name} ← [{x['lv']}][{x['ty']}][{x['hm']}] {x['t'][:40]}")
+        if not out_dn.get(d):
+            print("         （领跌确认无消息面催化）")
+        for name, v in (out_dn.get(d) or {}).items():
+            x = v["it"][0]
+            print(f"        ↓ {name} ← [{x['lv']}][{x['ty']}][{x['dir']}·{x['ps']}]"
+                  f"[{x['hm']}] {x['t'][:40]}")
 
 
 if __name__ == "__main__":
