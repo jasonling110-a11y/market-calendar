@@ -411,8 +411,11 @@ def main():
     for d in days:
         days[d].sort(key=lambda x: (x[0] or "99:99", -x[3]))
 
+    # 显式东八区：本脚本本机（CST）与 GitHub Actions（UTC）两头跑，
+    # 用 datetime.now() 会让同一份产物在不同机器上差 8 小时，界面上显示的时间就错了。
+    _cn = dt.timezone(dt.timedelta(hours=8))
     out = {"countries": cities, "names": names, "days": days,
-           "generatedAt": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+           "generatedAt": dt.datetime.now(_cn).strftime("%Y-%m-%d %H:%M:%S"),
            "range": [min(days) if days else "", max(days) if days else ""]}
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))

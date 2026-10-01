@@ -370,7 +370,14 @@ os.makedirs(OUT, exist_ok=True)
 
 # ⚠️ 必须是「当天」，不能写死：写死会让未来日历窗口越跑越偏
 # （例如钉在 9-26，到 10 月就有一周的数据被算成「已过去」而提前消失）。
-TODAY = dt.date.today()
+#
+# ⚠️ 必须显式用东八区，不能用 date.today()：
+# 本脚本两头跑 —— 本机在 CST，GitHub Actions 在 UTC。同一句 date.today() 在
+# Actions 上会拿到「UTC 那天」，而定时任务实际落在北京时间凌晨 1~4 点，
+# 对应 UTC 的前一天下午，于是 TODAY / generatedAt 整体差一天（时间还差 8 小时）。
+# 这个项目的所有时间口径都是北京时间，所以统一按东八区算，跨机器一致。
+CN_TZ = dt.timezone(dt.timedelta(hours=8))
+TODAY = dt.datetime.now(CN_TZ).date()
 HORIZON = 90                      # 未来三个月
 
 CAT_IMP = {"shock": 3, "macro_us": 2, "macro_cn": 2, "macro_eu": 2,
@@ -768,9 +775,10 @@ def main():
         json.dump(upcoming, f, ensure_ascii=False, separators=(",", ":"))
         f.write(";\n")
 
+    _now = dt.datetime.now(CN_TZ)          # 北京时间，见文件上方 CN_TZ 的说明
     meta = {
-        "version": dt.datetime.now().strftime("%Y%m%d%H%M"),
-        "generatedAt": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "version": _now.strftime("%Y%m%d%H%M"),
+        "generatedAt": _now.strftime("%Y-%m-%d %H:%M:%S"),
         "today": TODAY.isoformat(),
         "horizonDays": HORIZON,
         "sectorRange": [min(sector.keys()), max(sector.keys())] if sector else None,
