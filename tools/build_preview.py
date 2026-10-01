@@ -197,20 +197,33 @@ body{overflow:hidden}
 .bk-p{font-size:12.5px;font-variant-numeric:tabular-nums}
 .up{color:var(--up)}.down{color:var(--down)}
 .breadth{margin-top:10px;padding-top:8px;border-top:1px solid var(--sep);font-size:11.5px;color:var(--text2);text-align:center}
-/* 领涨板块的消息面催化：一个板块一行、消息贴在右侧。
-   板块名单独占一列而不是塞进标题里，是为了让「板块 → 消息」的对应关系一眼可见。 */
-.ct-sec{display:flex;gap:9px;padding:9px 0;border-top:1px solid var(--sep)}
-.ct-sec:first-of-type{border-top:0;padding-top:2px}
-.ct-nm{flex:0 0 auto;font-size:12.5px;color:var(--up);font-weight:500;min-width:4.4em;max-width:6.4em;line-height:1.5}
-.ct-list{flex:1;min-width:0}
-.ct-it{display:flex;gap:6px;align-items:baseline;font-size:12.5px;color:var(--text2);line-height:1.55;
-  text-decoration:none;cursor:pointer}
-.ct-it+.ct-it{margin-top:5px}
-.ct-it:active{opacity:.65}
-.ct-hm{flex:0 0 auto;font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums}
-.ct-t{flex:1;min-width:0}
-.ct-badge{flex:0 0 auto;font-size:10px;padding:1px 5px;border-radius:5px;color:#c48bff;
-  background:rgba(191,90,242,.13);white-space:nowrap}
+/* 领涨板块的消息面催化：一个行业组一块，块内先「主因」后「次要」，
+   每条下面挂一句关联逻辑。
+   同一行业组的多个板块（生物制品/医疗服务/化学制药）合并成一行 ——
+   否则同一条政策会在卡片里重复三遍，噪音大于信息。 */
+.ct-grp{padding:10px 0;border-top:1px solid var(--sep)}
+.ct-grp:first-of-type{border-top:0;padding-top:2px}
+.ct-hd{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:7px}
+.ct-nm{font-size:13px;font-weight:600}
+.ct-pct{font-size:11.5px;color:var(--up);font-variant-numeric:tabular-nums}
+.ct-it{display:block;padding:6px 0 6px 9px;border-left:2px solid var(--sep);
+  text-decoration:none;color:inherit}
+a.ct-it{cursor:pointer}
+.ct-it.on{border-left-color:var(--up)}
+a.ct-it:active{opacity:.6}
+.ct-l1{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px}
+.ct-tag{font-size:10px;padding:1px 5px;border-radius:5px;white-space:nowrap;font-weight:500}
+.ct-lv0{color:#ff8a80;background:rgba(255,69,58,.16)}
+.ct-lv1{color:var(--text3);background:var(--surface2)}
+.ct-t0{color:#ffc266;background:rgba(255,194,102,.14)}
+.ct-t1{color:#5bc8ff;background:rgba(91,200,255,.14)}
+.ct-t2{color:var(--text3);background:var(--surface2)}
+.ct-src{font-size:10.5px;color:var(--text3);margin-left:auto;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.ct-t{font-size:12.5px;color:var(--text2);line-height:1.55}
+.ct-why{margin-top:4px;font-size:11px;color:var(--text3);line-height:1.5}
+.ct-none{font-size:12px;color:var(--text3);line-height:1.55;display:flex;gap:6px}
+.ct-none b{font-weight:400;color:var(--text2)}
 .row{padding:10px 0;border-bottom:1px solid var(--sep)}
 .row:last-child{border-bottom:none}
 .ev-h{display:flex;align-items:center;flex-wrap:wrap;margin-bottom:4px;gap:6px}
@@ -733,21 +746,40 @@ function renderPanel(){
         <div class="breadth">${breadthLine(day.s)}</div></div>`;
     }
     // 领涨板块的消息面催化：补上「今天为什么涨」。
-    // 抓不到就整块不出现 —— 宁可不显示，也不要写一句「暂无催化」占位。
-    if(day.s&&day.s.ct){
-      const ns=Object.keys(day.s.ct).filter(n=>day.s.ct[n]&&day.s.ct[n].length);
-      if(ns.length){
-        const tot=ns.reduce((a,n)=>a+day.s.ct[n].length,0);
-        html+=`<div class="card"><div class="card-title"><span>领涨板块的消息面催化</span><span class="src">${tot} 条</span></div>`+
-          ns.map(n=>`<div class="ct-sec"><span class="ct-nm">${esc(n)}</span><div class="ct-list">`+
-            day.s.ct[n].map(x=>
-              `<a class="ct-it"${x.u?` href="${esc(x.u)}" target="_blank" rel="noopener"`:''}>`+
-              `<span class="ct-hm">${esc(x.hm||'')}</span>`+
-              `<span class="ct-t">${esc(x.t)}</span>`+
-              (x.src==='tag'?`<span class="ct-badge">官方标注</span>`:'')+
-              `</a>`).join('')+
-            `</div></div>`).join('')+`</div>`;
-      }
+    // 内容来自 tools/fetch_catalysts.py —— 只放**驱动性**的消息（政策/产业/公司动作），
+    // 盘中行情播报（「白酒板块13:47持续拉升」）已经在抓取层剔除，不在这里展示。
+    // 没有找到催化的板块也**照样列出来**并明说「未找到」——
+    // 静默隐藏会让人以为漏了，而编一条凑数更糟。
+    if(day.s&&day.s.up&&day.s.up.length&&day.s.ct){
+      const cts=day.s.ct,seen={},grps=[];
+      day.s.up.forEach(x=>{
+        const c=cts[x.n];
+        const key=(c?c.g:'#'+x.n)+'@@'+(c?c.it.map(i=>i.t).join('|'):'');
+        if(seen[key]!==undefined){const g=grps[seen[key]];g.names.push(x.n);if(x.p>g.p){g.p=x.p;}return;}
+        seen[key]=grps.length;
+        grps.push({names:[x.n],p:x.p,c:c||null});
+      });
+      const nHit=grps.filter(g=>g.c).length;
+      html+=`<div class="card"><div class="card-title"><span>领涨板块的消息面催化</span>`+
+        `<span class="src">${nHit}/${grps.length} 个板块有明确催化</span></div>`+
+        grps.map(g=>{
+          const head=`<div class="ct-hd"><span class="ct-nm">${g.names.map(n=>esc(n)).join(' / ')}</span>`+
+            `<span class="ct-pct">${fp(g.p)}</span></div>`;
+          if(!g.c)return `<div class="ct-grp">${head}<div class="ct-none">○ <b>未找到明确的消息面催化</b>，当日涨幅更可能来自资金面 / 情绪 / 板块轮动</div></div>`;
+          return `<div class="ct-grp">${head}`+
+            g.c.it.map(x=>{
+              // 有些快讯（尤其新浪的国务院/部委稿）没有 docurl。渲染成 <a> 会给出
+              // 一个「看着能点、点了没反应」的假链接，所以没链接时用 div。
+              const tag=x.u?'a':'div';
+              return `<${tag} class="ct-it${x.lv==='主'?' on':''}"${x.u?` href="${esc(x.u)}" target="_blank" rel="noopener"`:''}>`+
+              `<div class="ct-l1"><span class="ct-tag ${x.lv==='主'?'ct-lv0':'ct-lv1'}">${x.lv==='主'?'主因':'次要'}</span>`+
+              `<span class="ct-tag ${x.ty==='政策'?'ct-t0':(x.ty==='产业'?'ct-t1':'ct-t2')}">${esc(x.ty||'')}</span>`+
+              `<span class="ct-src">${esc(x.hm||'')} · ${esc(x.m||'')}</span></div>`+
+              `<div class="ct-t">${esc(x.t)}</div></${tag}>`;
+            }).join('')+
+            (g.c.ch?`<div class="ct-why">↳ 关联逻辑：${esc(g.c.ch)}</div>`:'')+
+            `</div>`;
+        }).join('')+`</div>`;
     }
     if(day.e&&day.e.length){
       html+=`<div class="card"><div class="card-title"><span>这一天发生的大事件</span><span class="src">${day.e.length} 条</span></div>`+
@@ -1196,12 +1228,18 @@ function showUpdateInfo(){
     +'【市场广度】'+(st.breadth_days||0)+' 天个股涨跌家数（沪深 A 股逐只统计，'
     +'剔除北交所）\n'
     +((st.catalyst_days)?'【板块催化】'+st.catalyst_days+' 天 / '+st.catalyst_items
-      +' 条，取当天新浪 7×24 与同花顺快讯中点到该板块的条目\n':'')
+      +' 条，取当天新浪 7×24 与同花顺快讯中**驱动**该板块的条目'
+      +((st.catalyst_none_days)?'，另有 '+st.catalyst_none_days+' 天已核查、确认无催化':'')
+      +'\n':'')
     +'【日历挂值】'+st.cal_linked+' / '+st.cal_items+' 条事件已挂上具体数值\n\n'
     +'【口径说明】涨跌家数按个股统计，不按板块 —— 板块涨跌会被少数权重板块带偏。\n'
     +'数值直接标在日历行上，含实际值 / 前值 / 同比 / 环比；\n'
     +'显示「—」表示该期还没公布或暂时没有可信来源——宁缺勿错，不猜数。\n'
-    +'板块催化只在确实匹配到当天消息时显示，没有就整块不出现。');
+    +'板块催化只收**能解释上涨的原因**（政策 / 产业动作 / 公司事件），'
+    +'盘中行情播报（「某某板块 13:47 持续拉升」）已剔除；\n'
+    +'只保留涨幅**之前**的消息（时间窗：上一交易日 15:00 → 当天 15:00），'
+    +'收盘后发的消息不算当天催化。\n'
+    +'没找到原因的板块会明说「未找到」，不拿相近的新闻凑数。');
 }
 function toggleHint(){
   const h=document.getElementById('hint');

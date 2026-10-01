@@ -2,21 +2,26 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>市场日历 · 预览</title>
 <style>
 :root{
   --bg:#000; --surface:#1c1c1e; --surface2:#2c2c2e; --sep:#38383a;
-  --text:#fff; --text2:#98989f; --text3:#636366;
+  --text:#fff; --text2:#98989f; --text3:#7d7d82;
   --up:#ff453a; --down:#30d158; --accent:#ff3b30; --warn:#ffd60a; --info:#0a84ff;
+  --st:env(safe-area-inset-top,0px); --sb:env(safe-area-inset-bottom,0px);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0;background:#0a0a0b;height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;color:var(--text)}
+html,body{margin:0;padding:0;background:#0a0a0b;height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;color:var(--text);-webkit-text-size-adjust:100%}
 body{overflow:hidden}
-.app{height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden}
+/* 100dvh 放在 100vh 后面：iOS Safari 的 100vh 含地址栏高度，比可视区高，
+   定高 + overflow:hidden 会把底部内容裁掉且永远滚不到。不支持的浏览器仍用 100vh。 */
+.app{height:100vh;height:100dvh;display:flex;flex-direction:column;position:relative;overflow:hidden}
 
 /* ===== 顶栏 ===== */
-.topbar{height:52px;flex-shrink:0;display:flex;align-items:center;gap:18px;padding:0 22px;border-bottom:1px solid var(--sep);background:#101012}
+/* 用 min-height:calc(52px + 安全区) 而不是固定 52px：全屏(PWA)时刘海会盖住内容。
+   若写成 height:52px 再加 padding-top:env(...)，内容会被padding挤扁 —— 必须把安全区算进最小高度。 */
+.topbar{min-height:calc(52px + var(--st));flex-shrink:0;display:flex;align-items:center;gap:18px;padding:var(--st) 22px 0;border-bottom:1px solid var(--sep);background:#101012}
 .brand{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;letter-spacing:.4px;flex-shrink:0}
 .brand-dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
 
@@ -28,12 +33,15 @@ body{overflow:hidden}
 
 /* ===== 日历头部 ===== */
 .hdr{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:12px}
+/* 左块必须 min-width:0 才能收缩：否则副标题变长时会去挤右侧导航，
+   导航是 flex-shrink 默认值 1，会被压窄到把「今天/笔记」截成「今/笔」。 */
+.hdr>div:first-child{flex:1 1 auto;min-width:0}
 .m-title{font-size:27px;font-weight:500;color:var(--accent);letter-spacing:.3px}
-.m-sub{display:block;font-size:11px;color:var(--text3);margin-top:3px}
-.hdr-r{display:flex;align-items:center}
+.m-sub{display:block;font-size:11px;color:var(--text3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdr-r{display:flex;align-items:center;flex-shrink:0}
 .nav{width:30px;height:30px;line-height:28px;text-align:center;font-size:18px;color:var(--text2);background:var(--surface2);border-radius:50%;margin-left:7px;cursor:pointer;user-select:none;transition:background .16s,color .16s}
 .nav:hover{background:#3a3a3c;color:var(--text)}
-.today{padding:0 13px;height:30px;line-height:30px;font-size:12.5px;color:var(--text);background:var(--surface2);border-radius:15px;margin-left:7px;cursor:pointer;transition:background .16s}
+.today{padding:0 13px;height:30px;line-height:30px;font-size:12.5px;color:var(--text);background:var(--surface2);border-radius:15px;margin-left:7px;cursor:pointer;white-space:nowrap;transition:background .16s}
 .today:hover{background:#3a3a3c}
 
 /* ===== 工作台状态（在顶栏内）===== */
@@ -70,13 +78,13 @@ body{overflow:hidden}
 .cell.today.sel .num{box-shadow:0 0 0 3px rgba(255,59,48,.3)}
 .dots{height:6px;display:flex;align-items:center;justify-content:center;margin-top:2px}
 .dot{width:5px;height:5px;border-radius:50%;margin:0 2px}
-.dot-h{background:#8e8e93}.dot-u{background:var(--warn)}.dot-n{background:var(--info)}
+.dot-h{background:#8e8e93}.dot-u{background:var(--warn)}.dot-n{background:var(--info)}.dot-v{background:#bf5af2}
 
 /* ===== 图例 ===== */
 .legend{display:flex;gap:16px;padding:12px 2px 16px;margin-top:auto;font-size:11px;color:var(--text3);flex-shrink:0}
 .legend span{display:flex;align-items:center;gap:6px}
 .legend i{width:5px;height:5px;border-radius:50%;display:inline-block}
-.legend i.h{background:#8e8e93}.legend i.u{background:var(--warn)}.legend i.n{background:var(--info)}
+.legend i.h{background:#8e8e93}.legend i.u{background:var(--warn)}.legend i.n{background:var(--info)}.legend i.v{background:#bf5af2}
 
 /* ===== 右侧内容区 ===== */
 .panel{flex:1;overflow-y:auto;padding:16px 26px 50px}
@@ -88,12 +96,60 @@ body{overflow:hidden}
 .ph-w{font-size:12px;color:var(--text2);margin-left:9px}
 .card{background:var(--surface);border-radius:14px;padding:16px 18px;margin:0 auto 14px;max-width:900px;border:1px solid rgba(255,255,255,.055)}
 
-/* ===== 窄屏回退为上下排布 ===== */
+/* ===== 窄屏（手机 / 竖屏 iPad）：改成「整页滚动」 =====
+   原实现是上下两块各自内滚：body 与 .app 都 overflow:hidden，只有 .cal-col
+   和 .panel 自己能滚。手机上手指滑在顶栏、日历留白或卡片间隙上完全没有反应，
+   体感就是「往下滑不动」。再叠上 .app 用 100vh 定高（iOS 把地址栏也算进去），
+   底部一截被裁掉后永远够不着。
+   这里把三处一起松开：文档可滚 → .app 自然高度 → 面板不再自带滚动条。 */
 @media (max-width:900px){
-  .layout{flex-direction:column}
-  .cal-col{width:100%;border-right:none;border-bottom:1px solid var(--sep);max-height:48vh;flex-shrink:0}
-  .panel{padding:14px 14px 40px}
-  .topbar{padding:0 14px}
+  html,body{height:auto;overflow:visible}
+  .app{height:auto;min-height:100vh;min-height:100dvh;display:block;overflow:visible;
+       padding-bottom:var(--sb)}
+  .topbar{padding:var(--st) 14px 0;gap:10px;flex-wrap:wrap;min-height:calc(46px + var(--st))}
+  .layout{display:block;min-height:0}
+  .cal-col{width:auto;max-height:none;flex-shrink:1;overflow:visible;padding:12px 14px 0;
+           border-right:none;border-bottom:1px solid var(--sep)}
+  .content-col{display:block;min-height:0}
+  .panel{overflow:visible;padding:0 14px calc(36px + var(--sb))}
+
+  /* 选中日期吸顶：手机一屏放不下全天内容，滚动时最容易迷路的是「我在看哪天」。
+     .panel 及其父容器在窄屏都改成 overflow:visible，position:sticky 才生效。 */
+  .ph{position:sticky;top:0;z-index:8;background:var(--bg);max-width:none;
+      margin:0 -14px 10px;padding:10px 14px;border-bottom:1px solid var(--sep)}
+
+  /* 触屏热区：苹果建议不小于 44px，原来 30px 的圆形按钮在手机上很容易点空 */
+  .nav{width:38px;height:38px;line-height:36px;margin-left:6px}
+  .today{height:38px;line-height:38px;padding:0 13px;margin-left:6px}
+  .seg-i{height:36px;line-height:36px}
+  .cell{height:44px}
+  .num{width:32px;height:32px;line-height:32px;font-size:14px}
+  .cell:active{background:rgba(255,255,255,.13)}
+  .nav:active,.today:active{background:#3a3a3c}
+
+  /* 标题与导航挤不到一行，原来是硬换行 → 右侧出现一整行只有按钮的留白，浪费约 46px。
+     用 display:contents 把标题/副标题/导航摊平成同级 flex 项，再重排成：
+     第一行「月份 + 导航」，第二行「数据时间（占满整行）」。 */
+  .hdr{align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  /* 768~900px（iPad 竖屏 / Mac 窗口拉窄）也走这套窄屏布局，7 列网格会被拉到
+     每格上百像素宽、只有 44px 高，看着很散。给日历本体一个宽度上限并居中。
+     必须用 align-self:center + 明确宽度，不能写 margin:auto —— .cal-col 是
+     column 方向的 flex 容器，子项带 auto 外边距会「收缩到内容宽度」而不是撑开居中，
+     实测会把星期表头「日一二三四五六」压成一坨。 */
+  .wk,.grid,.legend,.seg,.hdr{width:min(100%,420px);align-self:center}
+  .hdr>div:first-child{display:contents}
+  .m-title{order:1;font-size:23px;flex:0 0 auto}
+  .hdr-r{order:2;margin-left:auto}
+  .m-sub{order:3;flex:0 0 100%;margin-top:0;font-size:11px}
+  .card{padding:14px 15px;border-radius:13px}
+  .legend{padding:10px 2px 12px}
+  .wb{order:5;flex:1 1 100%;padding-bottom:8px}
+}
+
+/* 动效克制：系统开了「减弱动态效果」就把动画压到接近 0，避免无谓的位移干扰阅读 */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;
+    transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
 
 .card-title{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--text2);margin-bottom:12px;letter-spacing:.2px}
@@ -107,6 +163,33 @@ body{overflow:hidden}
 .bk-p{font-size:12.5px;font-variant-numeric:tabular-nums}
 .up{color:var(--up)}.down{color:var(--down)}
 .breadth{margin-top:10px;padding-top:8px;border-top:1px solid var(--sep);font-size:11.5px;color:var(--text2);text-align:center}
+/* 领涨板块的消息面催化：一个行业组一块，块内先「主因」后「次要」，
+   每条下面挂一句关联逻辑。
+   同一行业组的多个板块（生物制品/医疗服务/化学制药）合并成一行 ——
+   否则同一条政策会在卡片里重复三遍，噪音大于信息。 */
+.ct-grp{padding:10px 0;border-top:1px solid var(--sep)}
+.ct-grp:first-of-type{border-top:0;padding-top:2px}
+.ct-hd{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:7px}
+.ct-nm{font-size:13px;font-weight:600}
+.ct-pct{font-size:11.5px;color:var(--up);font-variant-numeric:tabular-nums}
+.ct-it{display:block;padding:6px 0 6px 9px;border-left:2px solid var(--sep);
+  text-decoration:none;color:inherit}
+a.ct-it{cursor:pointer}
+.ct-it.on{border-left-color:var(--up)}
+a.ct-it:active{opacity:.6}
+.ct-l1{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px}
+.ct-tag{font-size:10px;padding:1px 5px;border-radius:5px;white-space:nowrap;font-weight:500}
+.ct-lv0{color:#ff8a80;background:rgba(255,69,58,.16)}
+.ct-lv1{color:var(--text3);background:var(--surface2)}
+.ct-t0{color:#ffc266;background:rgba(255,194,102,.14)}
+.ct-t1{color:#5bc8ff;background:rgba(91,200,255,.14)}
+.ct-t2{color:var(--text3);background:var(--surface2)}
+.ct-src{font-size:10.5px;color:var(--text3);margin-left:auto;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.ct-t{font-size:12.5px;color:var(--text2);line-height:1.55}
+.ct-why{margin-top:4px;font-size:11px;color:var(--text3);line-height:1.5}
+.ct-none{font-size:12px;color:var(--text3);line-height:1.55;display:flex;gap:6px}
+.ct-none b{font-weight:400;color:var(--text2)}
 .row{padding:10px 0;border-bottom:1px solid var(--sep)}
 .row:last-child{border-bottom:none}
 .ev-h{display:flex;align-items:center;flex-wrap:wrap;margin-bottom:4px;gap:6px}
@@ -169,6 +252,18 @@ body{overflow:hidden}
 .up-dot{font-size:15px;color:var(--text3);margin-right:7px;flex-shrink:0;line-height:23px}
 .up-tx{font-size:14.5px;line-height:23px;flex:1}
 .up-link{margin-top:7px;padding-top:6px;border-top:1px solid var(--sep);font-size:11px;color:#3b9cff;text-align:right;cursor:pointer}
+/* 没有视频的日子只留一行指路条。
+   早先这里是直接铺一整张卡片（标题 + 全部要点），结果十月份每点一天都长得一模一样
+   —— 全是 9/30 的内容，用户反馈「点到哪天都显示同一天的视频总结」。
+   正文不该被搬到别的日期上，指个路就够了。 */
+.up-ptr{display:flex;align-items:center;gap:8px;padding:11px 14px;border-radius:11px;
+  background:var(--surface);border:1px dashed rgba(191,90,242,.34);
+  font-size:12.5px;color:var(--text2);cursor:pointer;line-height:1.5}
+.up-ptr:active{opacity:.7}
+.up-ptr-i{color:#c48bff;font-size:10px;flex-shrink:0}
+.up-ptr-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.up-ptr b{color:#c48bff;font-weight:500}
+.up-ptr-go{color:var(--text3);flex-shrink:0}
 .empty{padding:46px 30px;text-align:center;font-size:13px;color:var(--text3)}
 .empty-sub{margin-top:7px;font-size:11px;color:#4a4a4c}
 .nodata{padding:3px 20px 8px;font-size:10.5px;color:var(--text3);text-align:center}
@@ -200,19 +295,23 @@ body{overflow:hidden}
 .va-wait{font-size:9.5px;color:var(--warn);margin-left:auto}
 .foot{padding:18px 0 6px;text-align:center}
 .foot-t{font-size:12px;color:var(--info);cursor:pointer}
-.sheet{position:absolute;left:0;right:0;top:0;bottom:0;background:var(--bg);z-index:20;display:none;flex-direction:column}
+/* 弹层用 fixed 而不是 absolute：窄屏下 .app 已是自然高度（=整篇文档高），
+   absolute 会让弹层跟着长到文档高度，标题栏一滚就跑掉、内部滚动条也失效。 */
+.sheet{position:fixed;left:0;right:0;top:0;bottom:0;background:var(--bg);z-index:20;display:none;flex-direction:column}
 .sheet.on{display:flex}
-.sh-hd{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--sep)}
+.sh-hd{display:flex;align-items:center;justify-content:space-between;padding:calc(14px + var(--st)) 18px 14px;border-bottom:1px solid var(--sep)}
 .sh-t{font-size:16px;font-weight:600}
 .sh-x{font-size:20px;color:var(--text2);cursor:pointer}
 .sh-c,.sh-s{font-size:14px;color:var(--info);cursor:pointer}
-.sh-bd{flex:1;overflow-y:auto;padding:14px 18px}
+.sh-bd{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 18px calc(24px + var(--sb))}
 .sh-bd::-webkit-scrollbar{width:0}
 .ta{width:100%;height:190px;background:var(--surface);border-radius:10px;padding:12px;font-size:14px;line-height:22px;color:var(--text);border:none;outline:none;resize:none;font-family:inherit}
 .nvtools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:9px;margin-bottom:10px;border-bottom:1px solid var(--sep)}
 .nvt{font-size:12px;color:var(--info);padding:5px 11px;border:1px solid var(--sep);border-radius:7px;cursor:pointer;white-space:nowrap}
 .nvt:active{opacity:.55}
-.nvt-tip{font-size:10.5px;color:var(--text3);margin-left:auto}
+/* 提示文案里会出现邮箱（可能很长且没有空格），不给上限会把整行撑破 */
+.nvt-tip{font-size:10.5px;color:var(--text3);margin-left:auto;max-width:100%;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chips{display:flex;flex-wrap:wrap;margin-top:12px}
 .chip{padding:5px 14px;font-size:13px;color:var(--text2);background:var(--surface);border:1px solid var(--sep);border-radius:999px;margin:0 8px 8px 0;cursor:pointer}
 .chip.on{color:#fff;background:var(--info);border-color:var(--info)}
@@ -238,8 +337,10 @@ body{overflow:hidden}
 .ntx{font-size:13px;color:var(--text);line-height:20px;word-break:break-all}
 .nem{padding:12px 0 4px;font-size:11.5px;color:var(--text3);text-align:center}
 .nbtn{font-size:12px;color:var(--info);cursor:pointer}
-.fab{position:absolute;right:18px;bottom:22px;width:46px;height:46px;border-radius:50%;background:var(--info);color:#fff;font-size:26px;line-height:44px;text-align:center;box-shadow:0 4px 12px rgba(10,132,255,.4);cursor:pointer;z-index:5}
-.hint{position:absolute;left:0;right:0;bottom:0;background:rgba(28,28,30,.96);border-top:1px solid var(--sep);padding:14px 18px 22px;font-size:12px;color:var(--text2);line-height:19px;display:none;z-index:9}
+.fab{position:absolute;right:18px;bottom:calc(22px + var(--sb));width:46px;height:46px;border-radius:50%;background:var(--info);color:#fff;font-size:26px;line-height:44px;text-align:center;box-shadow:0 4px 12px rgba(10,132,255,.4);cursor:pointer;z-index:5}
+/* 同样改 fixed：窄屏 .app 是自然高度，absolute+bottom:0 会落到整篇文档最底下，
+   弹出后要滚到底才看得见。 */
+.hint{position:fixed;left:0;right:0;bottom:0;background:rgba(28,28,30,.96);border-top:1px solid var(--sep);padding:14px 18px calc(22px + var(--sb));font-size:12px;color:var(--text2);line-height:19px;display:none;z-index:9}
 .hint.on{display:block}
 .hint b{color:var(--text)}
 
@@ -303,6 +404,7 @@ body{overflow:hidden}
         <span><i class="h"></i>有数据</span>
         <span><i class="u"></i>预告</span>
         <span><i class="n"></i>笔记</span>
+        <span><i class="v"></i>视频</span>
       </div>
     </div>
 
@@ -383,8 +485,29 @@ body{overflow:hidden}
 const HISTORY = (window.MC_HISTORY||{});
 const UPCOMING = (window.MC_UPCOMING||[]);
 const META = (window.MC_META||{});
-// 云版页面会注入 {endpoint, publishableKey}；本地与 GitHub Pages 版为 null（不启用云笔记）
-const CLOUD_CFG = {"endpoint": "https://market-calendar-71280.app.workbuddy.host", "publishableKey": "wbpk_1bw8OOOB07aPP6UKsGy6u1_Y0kuQFIuyrXubLSxzNZvNNo9qkav1Z5w"};
+// 云配置三种宿主都会注入，但只有「网关放行的来源」才能真的用起来。
+// 实测预检（OPTIONS / .cloud/database/rest）结果：
+//   http://127.0.0.1:8787、http://localhost:8787、http://127.0.0.1:9999 → 204 放行
+//   https://<app>.app.workbuddy.host（同源）                            → 204 放行
+//   https://xxx.github.io                                              → 403 拒绝
+// 所以 GitHub Pages 那份必须在这里关掉：否则会员显示一个「登录同步」按钮，
+// 点进去只会撞一堵 CORS 的墙，还不如不出现。
+const CLOUD_CFG_RAW = {"endpoint": "https://market-calendar-71280.app.workbuddy.host", "publishableKey": "wbpk_1bw8OOOB07aPP6UKsGy6u1_Y0kuQFIuyrXubLSxzNZvNNo9qkav1Z5w"};
+const CLOUD_CFG = cloudAllowed() ? CLOUD_CFG_RAW : null;
+// /api/status 这类接口只由本机 tools/workbench.py 提供。托管环境下调用必然是 404，
+// 虽然旧代码已 catch 掉不报错，但每次打开都白发一个失败请求，这里直接不发。
+function isLocalWorkbench(){
+  const h=location.hostname||'';
+  return h==='localhost'||h==='127.0.0.1'||h==='[::1]';
+}
+function cloudAllowed(){
+  if(!CLOUD_CFG_RAW)return false;
+  if(location.protocol!=='http:'&&location.protocol!=='https:')return false; // file:// 的 Origin 是 null
+  const h=location.hostname||'';
+  if(h==='localhost'||h==='127.0.0.1'||h==='[::1]')return true;   // 本机工作台
+  if(/\.workbuddy\.host$/.test(h))return true;                    // 云端托管（同源）
+  return false;                                                    // 其余一律关掉
+}
 
 const CAT={macro_us:{l:'美国数据',c:'us'},macro_cn:{l:'中国数据',c:'cn'},macro_eu:{l:'欧洲数据',c:'eu'},
   macro_jp:{l:'日本数据',c:'jp'},macro_kr:{l:'韩国数据',c:'kr'},shock:{l:'突发事件',c:'shock'},
@@ -396,6 +519,16 @@ const UP={}; UPCOMING.forEach(d=>UP[d.date]=d.items);
 const IND=META.indicators||{};
 // 数值存的是紧凑数组 [指标键,实际,预期,前值,同比,环比]，这里展开成对象
 const CALC=META.calCountries||[], CALN=META.calNames||[];
+// 有 UP 视频的日期（升序），只算一次 —— 5497 天里每次渲染都重扫一遍不划算。
+const UP_DATES=Object.keys(HISTORY).filter(k=>{const v=HISTORY[k];return !!(v&&v.u&&v.u.length)}).sort();
+// 不晚于 date 的最近一期视频。
+// 打开页面默认落在「今天」，而艾丽并不是每天都发 —— 没有这个兜底，用户看到的就是
+// 空白一块，会以为功能坏了（这个疑问已经出现过两次）。有兜底时卡片上必须写清来源日期。
+function latestUpOnOrBefore(date){
+  for(let i=UP_DATES.length-1;i>=0;i--){ if(UP_DATES[i]<=date) return UP_DATES[i]; }
+  return null;
+}
+function jumpTo(d){const t=new Date(d+'T00:00:00');year=t.getFullYear();month=t.getMonth()+1;sel=d;renderGrid();renderPanel();focusPanel()}
 let calFilter='key', calAllCache=[], calKeyCache=[];
 function expandCal(arr,vbk){return (arr||[]).map((x,i)=>{const mk=x[6]||'';const v=mk?vbk[mk]:null;
   let pd='';if(x[5]){const mm=+x[5].slice(2);
@@ -421,8 +554,23 @@ function diffDays(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T0
 function histSet(y,m){const p=y+'-'+pad(m)+'-';const s={};for(const k in HISTORY){if(k.indexOf(p)===0)s[k]=true}return s}
 function monthEmpty(y,m){const p=y+'-'+pad(m)+'-';for(const k in HISTORY){if(k.indexOf(p)===0)return false}return true}
 function upSet(y,m){const p=y+'-'+pad(m)+'-';const s={};for(const k in UP)if(k.indexOf(p)===0)s[k]=true;return s}
+// 当月有 UP 视频的日子 —— 日历上要打点，否则用户根本不知道哪天有艾丽的总结
+function vidSet(y,m){const p=y+'-'+pad(m)+'-';const s={};for(const k of UP_DATES){if(k.indexOf(p)===0)s[k]=true}return s}
 
 function fp(p){const n=+p;return (n>0?'+':(n<0?'-':''))+Math.abs(n).toFixed(2)+'%'}
+// 广度口径：个股优先（su/sd/sn），没有个股数据才退回板块口径（bt/br）。
+// 为什么改成个股：368 个板块的涨跌会被少数权重板块带偏 ——
+// 「34 个板块红着、4000 只个股在跌」在板块口径里看起来是「普涨」，在情绪上是普跌。
+function breadthLine(s){
+  if(s.su!=null){
+    const pct=s.sn?Math.round(s.su/s.sn*100):0;
+    return `沪深 ${s.sn} 只个股 · <span class="up">${s.su} 涨</span> / `+
+           `<span class="down">${s.sd} 跌</span> · 涨占比 ${pct}%`;
+  }
+  if(s.bt!=null)return `当日 ${s.bt} 个板块 · <span class="up">${s.br} 涨</span> / `+
+    `<span class="down">${s.bt-s.br} 跌</span>`;
+  return '';
+}
 function fv(v,u){if(v===null||v===undefined||v==='')return '—';const n=+v;if(isNaN(n))return '—';
   const ab=Math.abs(n);let s;if(ab%1===0){s=String(ab)}else{s=ab.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')};
   return (n<0?'-':'')+s+(u||'')}
@@ -431,8 +579,12 @@ function biasOf(a,f){if(a==null||f==null)return null;const d=+a-+f;if(isNaN(d))r
 
 function renderGrid(){
   document.getElementById('mtitle').textContent=year+'年'+month+'月';
-  document.getElementById('msub').textContent='内置离线数据 · 点此查看更新方式';
+  // 原来这里写死「内置离线数据」，但云端版是运行时实时拉取的，写死会误导。
+  // 改成显示数据包的真实生成时间，三种宿主（本机 / Pages / 云端）都成立。
+  const _g=(META&&META.generatedAt)?META.generatedAt.slice(5,16):'—';
+  document.getElementById('msub').textContent='数据 '+_g+' 更新 · 点此说明';
   const hs=histSet(year,month), us=upSet(year,month), ndays=noteDays(year,month);
+  const vids=vidSet(year,month);
   const total=dim(year,month), lead=new Date(year,month-1,1).getDay();
   const prev=addM(year,month,-1), pt=dim(prev.y,prev.m), next=addM(year,month,1);
   let cells=[];
@@ -445,13 +597,23 @@ function renderGrid(){
     const dot=(hs[s]&&mode==='history')?'<div class="dot dot-h"></div>':'';
     const ndot=(ndays[s])?'<div class="dot dot-n"></div>':'';
     const dot2=(us[s]&&mode==='upcoming')?'<div class="dot dot-u"></div>':'';
-    return `<div class="${cls}" onclick="pick(${c.y},${c.m},${c.d})"><div class="num">${c.d}</div><div class="dots">${dot}${dot2}${ndot}</div></div>`;
+    const vdot=(vids[s]&&mode==='history')?'<div class="dot dot-v"></div>':'';
+    return `<div class="${cls}" onclick="pick(${c.y},${c.m},${c.d})"><div class="num">${c.d}</div><div class="dots">${dot}${dot2}${ndot}${vdot}</div></div>`;
   }).join('');
 }
 
-function pick(y,m,d){sel=y+'-'+pad(m)+'-'+pad(d);year=y;month=m;renderGrid();renderPanel()}
+// 手机上日历占掉大半屏，选完日子若不把内容顶上来，用户会以为「点了没反应」。
+// 桌面端不用滚（内容本来就在右边同时可见），所以只在窄屏触发；
+// 系统开了「减弱动态效果」时用瞬时跳转，不做平滑动画。
+function focusPanel(){
+  if(window.innerWidth>900)return;
+  const p=document.getElementById('panel'); if(!p)return;
+  const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+  p.scrollIntoView(reduce?false:{behavior:'smooth',block:'start'});
+}
+function pick(y,m,d){sel=y+'-'+pad(m)+'-'+pad(d);year=y;month=m;renderGrid();renderPanel();focusPanel()}
 function go(d){const b=addM(year,month,d);year=b.y;month=b.m;renderGrid()}
-function goToday(){const t=new Date();year=t.getFullYear();month=t.getMonth()+1;sel=TODAY;renderGrid();renderPanel()}
+function goToday(){const t=new Date();year=t.getFullYear();month=t.getMonth()+1;sel=TODAY;renderGrid();renderPanel();focusPanel()}
 function setMode(m){mode=m;document.getElementById('segH').className='seg-i'+(m==='history'?' on':'');
   document.getElementById('segU').className='seg-i'+(m==='upcoming'?' on':'');renderGrid();renderPanel()}
 
@@ -473,6 +635,27 @@ function decorate(items,date){
 }
 
 function tagHtml(it){return `<span class="tag ${it.cls}">${it.label}</span>`}
+
+// UP 要点卡片。只在「这一天确实有视频」时使用，正文绝不挪到别的日期上。
+function upCardHtml(u){
+  const tag=u.auto?'自动摘录 · 待归纳':'转写提炼';
+  return `<div class="card">`+
+    `<div class="card-title"><span>UP 主观点 · ${esc(u.n||'UP 主')}</span><span class="src">${tag}</span></div>`+
+    `<div class="up-t">${esc(u.t||'')}</div>`+
+    (u.p||[]).map(pt=>`<div class="up-pt"><span class="up-dot">·</span><span class="up-tx">${esc(pt)}</span></div>`).join('')+
+    `<div class="up-link" onclick="window.open('https://www.bilibili.com/video/${u.k}','_blank')">在 B 站看原视频 ›</div></div>`;
+}
+// 这天没有视频时，只给一行「最近一期在哪」的指路条（点一下跳过去）。
+// 不要把那一期的正文搬过来 —— 十月份每天点开都是同一张 9/30 的卡片，
+// 用户会以为「点到哪天都显示同一天」。指路即可，别代读。
+function upPointerHtml(srcDate,title){
+  const ds=srcDate.slice(5).replace('-','/');
+  return `<div class="up-ptr" onclick="jumpTo('${srcDate}')">`+
+    `<span class="up-ptr-i">▶</span>`+
+    `<span class="up-ptr-t">这一天没有新视频 · 最近一期 <b>${ds}</b>`+
+    (title?' '+esc(title):'')+`</span>`+
+    `<span class="up-ptr-go">›</span></div>`;
+}
 
 function renderPanel(){
   const md=sel.slice(5);
@@ -529,7 +712,43 @@ function renderPanel(){
       html+=`<div class="card"><div class="card-title"><span>A 股领涨 / 领跌板块</span><span class="src">实盘 ${day.s.date}</span></div><div class="two">
         <div class="col"><div class="col-t up">领涨</div>${day.s.up.map(x=>`<div class="bk"><span class="bk-n">${x.n}</span><span class="bk-p up">${fp(x.p)}</span></div>`).join('')}</div>
         <div class="col"><div class="col-t down">领跌</div>${day.s.down.map(x=>`<div class="bk"><span class="bk-n">${x.n}</span><span class="bk-p down">${fp(x.p)}</span></div>`).join('')}</div></div>
-        <div class="breadth">当日 ${day.s.bt} 个板块 · <span class="up">${day.s.br} 涨</span> / <span class="down">${day.s.bt-day.s.br} 跌</span></div></div>`;
+        <div class="breadth">${breadthLine(day.s)}</div></div>`;
+    }
+    // 领涨板块的消息面催化：补上「今天为什么涨」。
+    // 内容来自 tools/fetch_catalysts.py —— 只放**驱动性**的消息（政策/产业/公司动作），
+    // 盘中行情播报（「白酒板块13:47持续拉升」）已经在抓取层剔除，不在这里展示。
+    // 没有找到催化的板块也**照样列出来**并明说「未找到」——
+    // 静默隐藏会让人以为漏了，而编一条凑数更糟。
+    if(day.s&&day.s.up&&day.s.up.length&&day.s.ct){
+      const cts=day.s.ct,seen={},grps=[];
+      day.s.up.forEach(x=>{
+        const c=cts[x.n];
+        const key=(c?c.g:'#'+x.n)+'@@'+(c?c.it.map(i=>i.t).join('|'):'');
+        if(seen[key]!==undefined){const g=grps[seen[key]];g.names.push(x.n);if(x.p>g.p){g.p=x.p;}return;}
+        seen[key]=grps.length;
+        grps.push({names:[x.n],p:x.p,c:c||null});
+      });
+      const nHit=grps.filter(g=>g.c).length;
+      html+=`<div class="card"><div class="card-title"><span>领涨板块的消息面催化</span>`+
+        `<span class="src">${nHit}/${grps.length} 个板块有明确催化</span></div>`+
+        grps.map(g=>{
+          const head=`<div class="ct-hd"><span class="ct-nm">${g.names.map(n=>esc(n)).join(' / ')}</span>`+
+            `<span class="ct-pct">${fp(g.p)}</span></div>`;
+          if(!g.c)return `<div class="ct-grp">${head}<div class="ct-none">○ <b>未找到明确的消息面催化</b>，当日涨幅更可能来自资金面 / 情绪 / 板块轮动</div></div>`;
+          return `<div class="ct-grp">${head}`+
+            g.c.it.map(x=>{
+              // 有些快讯（尤其新浪的国务院/部委稿）没有 docurl。渲染成 <a> 会给出
+              // 一个「看着能点、点了没反应」的假链接，所以没链接时用 div。
+              const tag=x.u?'a':'div';
+              return `<${tag} class="ct-it${x.lv==='主'?' on':''}"${x.u?` href="${esc(x.u)}" target="_blank" rel="noopener"`:''}>`+
+              `<div class="ct-l1"><span class="ct-tag ${x.lv==='主'?'ct-lv0':'ct-lv1'}">${x.lv==='主'?'主因':'次要'}</span>`+
+              `<span class="ct-tag ${x.ty==='政策'?'ct-t0':(x.ty==='产业'?'ct-t1':'ct-t2')}">${esc(x.ty||'')}</span>`+
+              `<span class="ct-src">${esc(x.hm||'')} · ${esc(x.m||'')}</span></div>`+
+              `<div class="ct-t">${esc(x.t)}</div></${tag}>`;
+            }).join('')+
+            (g.c.ch?`<div class="ct-why">↳ 关联逻辑：${esc(g.c.ch)}</div>`:'')+
+            `</div>`;
+        }).join('')+`</div>`;
     }
     if(day.e&&day.e.length){
       html+=`<div class="card"><div class="card-title"><span>这一天发生的大事件</span><span class="src">${day.e.length} 条</span></div>`+
@@ -539,13 +758,19 @@ function renderPanel(){
             (g?`<span class="tag g-${x.r.toLowerCase()}">${g}</span>`:'')+
             `<span class="ev-t">${x.t}</span></div><div class="ev-d">${x.d}</div></div></div>`}).join('')+`</div>`;
     }
-    (day.u||[]).forEach(u=>{
-      html+=`<div class="card"><div class="card-title"><span>UP 主观点 · ${u.n||'UP 主'}</span><span class="src">${u.auto?'自动摘录 · 待归纳':'转写提炼'}</span></div>`+
-        `<div class="up-t">${esc(u.t||'')}</div>`+
-        (u.p||[]).map(pt=>`<div class="up-pt"><span class="up-dot">·</span><span class="up-tx">${esc(pt)}</span></div>`).join('')+
-        `<div class="up-link" onclick="window.open('https://www.bilibili.com/video/${u.k}','_blank')">在 B 站看原视频 ›</div></div>`;
-    });
-    if(!(day.s&&day.s.up&&day.s.up.length)&&!(day.e&&day.e.length)&&!dvals.length&&!cal.length&&!(day.u&&day.u.length))
+    // 这天有视频就铺卡片；没有则只给指路条，不把别期的正文搬过来。
+    // 打开页面默认落在「今天」，而艾丽并不是每天都发 —— 完全没有提示的话，
+    // 用户会以为「视频总结又没了」（这个疑问已经出现过两次）。
+    const hasUp=!!(day.u&&day.u.length);
+    const fbDate=hasUp?null:latestUpOnOrBefore(sel);
+    if(hasUp){
+      day.u.forEach(u=>{ html+=upCardHtml(u); });
+    }else if(fbDate){
+      const u0=(HISTORY[fbDate].u||[])[0];
+      html+=upPointerHtml(fbDate,u0?u0.t:'');
+    }
+    // 有指路条时不再叠「暂无收录」，两句话摆在一起自相矛盾
+    if(!(day.s&&day.s.up&&day.s.up.length)&&!(day.e&&day.e.length)&&!dvals.length&&!cal.length&&!fbDate)
       html+=`<div class="empty">${sel} 暂无收录<div class="empty-sub">这一天没有发布重要数据，也没有收录到重大事件</div></div>`;
   } else {
     const items=decorate(UP[sel],sel);
@@ -730,13 +955,26 @@ function setLgMsg(t,ok){const e=document.getElementById('lgMsg');e.textContent=t
 function safeTags(v){try{const a=JSON.parse(v||'[]');return Array.isArray(a)?a:[]}catch(e){return []}}
 
 async function initCloud(){
-  if(!CLOUD_CFG||!window.WorkBuddyCloud)return;
+  if(!CLOUD_CFG)return;
+  // 非云版（本机工作台）不写死 <script>，需要时才拉这份 62KB 的 SDK。
+  // Pages 版会走到这里之前就被 CLOUD_CFG=null 挡掉，不会产生任何请求。
+  if(!window.WorkBuddyCloud)await loadSdk();
+  if(!window.WorkBuddyCloud)return;
   try{
     cloud=WorkBuddyCloud.createWorkBuddyCloud({
       endpoint:CLOUD_CFG.endpoint, publishableKey:CLOUD_CFG.publishableKey});
   }catch(e){return}
   document.getElementById('cloudBtn').style.display='';
   await bootCloud();
+}
+function loadSdk(){
+  return new Promise(function(res){
+    const s=document.createElement('script');
+    s.src='./sdk/workbuddy-cloud.js';
+    s.onload=function(){res(true)}; s.onerror=function(){res(false)};
+    document.head.appendChild(s);
+    setTimeout(function(){res(!!window.WorkBuddyCloud)},6000);
+  });
 }
 async function bootCloud(){
   if(!cloud)return;
@@ -858,9 +1096,16 @@ async function startForgot(){
   setLgMsg('验证码已发送到邮箱，请输入验证码和新密码',true);
 }
 async function afterLogin(){
+  await bootCloud();          // bootCloud 内只做下行拉取
+  // 登录前写的笔记还只在本机 localStorage 里，必须补一次上行。
+  // 不补的话这批笔记「看着还在、却永远上不去」，另一台设备始终看不到 ——
+  // 用户只会觉得「同步了但没同步」，而且全程没有任何报错提示。
+  const n=await cloudPushAll();
   closeLogin();
-  await bootCloud();
   renderNotesView(); renderGrid(); renderPanel();
+  // 写在 renderCloudBar 之后，否则会被它覆盖掉
+  if(n)document.getElementById('cloudTip').textContent=
+    '已登录 '+((cloudUser&&cloudUser.email)||'')+' · 已同步 '+n+' 条笔记';
 }
 async function doSignOut(){
   try{ await cloud.auth.signOut(); }catch(e){}
@@ -922,25 +1167,56 @@ async function cloudSave(note){
   }
 }
 
+// 三种宿主的数据来源各不相同，说明文案必须跟着变。
+// 旧版写死「内置离线数据包，数据随版本发布，不会自动变化」—— 在云端版上是错的：
+// 云端页面每次打开都会实时去 GitHub Pages 取最新数据，而且不需要重新发布。
 function showUpdateInfo(){
-  alert('数据更新说明\n\n'
-    +'【当前】内置离线数据包，数据随版本发布，不会自动变化。\n\n'
-    +'【开启每日自动更新】需要三步：\n'
-    +'1. 开通云开发并填写环境 ID（app.js 的 cloudEnv / useCloud）\n'
-    +'2. 部署 syncCalendar 云函数（含 08:00 与 18:00 定时触发）\n'
-    +'3. 建立 market_daily 等数据库集合\n\n'
-    +'部署后：云函数每日抓取并落库，客户端打开时自动合并，\n'
-    +'顶部会显示「云端 18:05 更新」，点一下可手动刷新。\n\n'
-    +'可更新的数据：A 股当日板块、宏观数值、本期市场预期。\n'
-    +'需发版更新的数据：历史事件库。\n\n'
-    +'详细步骤见项目根目录 DEPLOY.md');
+  const st=(META&&META.stats)||{}, sr=(META&&META.sectorRange)||['—','—'];
+  const g=(META&&META.generatedAt)||'—';
+  const h=location.hostname||'';
+  let src,how;
+  if(h==='localhost'||h==='127.0.0.1'||h===''){
+    src='本机工作台（只在这台 Mac 上运行）';
+    how='后台定时跑：08:30 / 12:30 / 18:00 快速刷新，21:30 完整更新（多出 B 站视频语音转写）。\n'
+       +'也可以点顶部的「快速刷新 / 完整更新」手动触发。';
+  }else if(/github\.io$/.test(h)){
+    src='GitHub Pages（云端托管）';
+    how='GitHub Actions 每天自动跑一次，抓取 A 股板块、宏观数据与财经日历后提交。\n'
+       +'这台 Mac 开不开机都不影响——但 B 站视频要点需要本机转写后才会同步上来。';
+  }else{
+    src='云端应用（WorkBuddy 托管）';
+    how='页面每次打开都实时去 GitHub Pages 取最新数据，所以数据更新不用重新发布。\n'
+       +'唯一例外是 B 站视频要点：那部分要本机跑过语音转写才会生成。';
+  }
+  alert('数据说明\n\n'
+    +'【数据时间】'+g+'\n'
+    +'【数据来源】'+src+'\n\n'
+    +'【更新方式】'+how+'\n\n'
+    +'【覆盖范围】'+st.days+' 天历史 · '+st.events+' 条事件 · '+st.sector_days
+    +' 天 A 股板块行情（'+sr[0]+' ~ '+sr[1]+'）\n'
+    +'【市场广度】'+(st.breadth_days||0)+' 天个股涨跌家数（沪深 A 股逐只统计，'
+    +'剔除北交所）\n'
+    +((st.catalyst_days)?'【板块催化】'+st.catalyst_days+' 天 / '+st.catalyst_items
+      +' 条，取当天新浪 7×24 与同花顺快讯中**驱动**该板块的条目'
+      +((st.catalyst_none_days)?'，另有 '+st.catalyst_none_days+' 天已核查、确认无催化':'')
+      +'\n':'')
+    +'【日历挂值】'+st.cal_linked+' / '+st.cal_items+' 条事件已挂上具体数值\n\n'
+    +'【口径说明】涨跌家数按个股统计，不按板块 —— 板块涨跌会被少数权重板块带偏。\n'
+    +'数值直接标在日历行上，含实际值 / 前值 / 同比 / 环比；\n'
+    +'显示「—」表示该期还没公布或暂时没有可信来源——宁缺勿错，不猜数。\n'
+    +'板块催化只收**能解释上涨的原因**（政策 / 产业动作 / 公司事件），'
+    +'盘中行情播报（「某某板块 13:47 持续拉升」）已剔除；\n'
+    +'只保留涨幅**之前**的消息（时间窗：上一交易日 15:00 → 当天 15:00），'
+    +'收盘后发的消息不算当天催化。\n'
+    +'没找到原因的板块会明说「未找到」，不拿相近的新闻凑数。');
 }
 function toggleHint(){
   const h=document.getElementById('hint');
   h.className = h.className.includes('on') ? 'hint' : 'hint on';
   h.innerHTML=`<b>数据覆盖</b>：${META.stats.days} 天历史 · ${META.stats.events} 条真实事件 · ${META.stats.sector_days} 天 A 股板块行情（${META.sectorRange[0]} ~ ${META.sectorRange[1]}）<br>
+  <b>涨跌家数</b>：按沪深个股逐只统计（${META.stats.breadth_days||0} 天），不是「多少板块涨」——板块口径会被少数权重板块带偏。<br>
   <b>三档置信度</b>：<span class="conf conf-confirmed">已官宣</span> 官方公布日期 ｜ <span class="conf conf-estimated">规律推算</span> 按发布规律推算 ｜ <span class="conf conf-rumored">待官宣</span> 市场预期未官宣<br>
-  <b>更新</b>：主包内置离线数据，断网可用；配置云开发后由云函数每日 08:00 / 18:00 抓取并落库，客户端自动合并。<br>
+  <b>更新</b>：本机工作台定时抓取（08:30 / 12:30 / 18:00 快速，21:30 完整含 B 站转写）；云端由 GitHub Actions 每日更新，手机上打开即是最新。<br>
   <b>免责</b>：仅用于信息整理与复盘参考，不构成投资建议，日程与行情以官方发布为准。`;
 }
 
@@ -953,6 +1229,7 @@ function wbSet(cls,text){
   const t=document.getElementById('wbText'); if(t) t.textContent=text;
 }
 function wbInit(){
+  if(!isLocalWorkbench())return;   // 托管环境没有这套接口，别发这个必然 404 的请求
   fetch('/api/status',{cache:'no-store'})
     .then(r=>r.ok?r.json():Promise.reject(new Error('no api')))
     .then(d=>{
@@ -1010,7 +1287,7 @@ function wbRefresh(mode){
 wbInit();
 
 renderGrid(); renderPanel();
-initCloud();   // 云版：恢复登录态并拉取云端笔记；本地 / Pages 版直接返回
+initCloud();   // 恢复登录态并拉取云端笔记；宿主不放行跨域时 CLOUD_CFG 为 null，直接返回
 document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')go(-1);if(e.key==='ArrowRight')go(1);if(e.key==='t')goToday()});
 </script>
 </body>
