@@ -14,8 +14,12 @@ CLOUD_OUT = os.path.join(ROOT, "webapp", "index.html")
 CCFG = os.path.join(HERE, "cloud_config.json")      # 开通云服务后写入
 # 数据仍在 GitHub Pages，云版页面运行时从这里加载
 DATA_BASE = "https://jasonling110-a11y.github.io/market-calendar/data"
-SDK_URL = ("https://cdn.jsdelivr.net/npm/"
+# SDK 官方 CDN（jsdelivr 在国内时通时断，故改为随应用一起自托管）。
+# 文件是官方发布的 IIFE 构建，直接下载到 webapp/sdk/，未做任何改写。
+# 需要升级时重新下载同名文件即可（不要手写 fetch 封装替代它）。
+SDK_CDN = ("https://cdn.jsdelivr.net/npm/"
            "@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js")
+SDK_URL = "./sdk/workbuddy-cloud.js"
 
 
 def load_js_module(name):
