@@ -49,6 +49,8 @@ jobs:
       - name: 重建数据与日历订阅源
         run: |
           cd tools
+          # 兜底摘录：万一有已转写但没写总结的新视频，先自动入包，避免日历空窗
+          python3 summarize_up.py || echo "  [!] 兜底摘录失败，沿用已有要点"
           python3 build_dataset.py
           python3 build_preview.py
           python3 build_ics.py

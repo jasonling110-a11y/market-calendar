@@ -13,8 +13,13 @@ tools/data/audio/
 # 东财限流前的中间备份，已被 sector_daily.json 取代
 tools/data/sector_daily_raw_backup.json
 tools/data/_pending.json
+# 抓取前的匆忙备份（*.bak_时间戳），只在本机回滚时有用
+tools/data/*.bak_*
+tools/data/*.bak
 
 # ---- 凭据（绝对不要提交）----
+# B 站 cookie（含 buvid3 等身份标识），用完即弃
+tools/data/_bili_cookies.txt
 # PushPlus token 等同推送权限，配置放在 ~/.market-calendar.push.json（仓库之外）
 tools/.pushplus.json
 .pushplus.json

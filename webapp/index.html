@@ -540,7 +540,7 @@ function renderPanel(){
             `<span class="ev-t">${x.t}</span></div><div class="ev-d">${x.d}</div></div></div>`}).join('')+`</div>`;
     }
     (day.u||[]).forEach(u=>{
-      html+=`<div class="card"><div class="card-title"><span>UP 主观点 · ${u.n||'UP 主'}</span><span class="src">转写提炼</span></div>`+
+      html+=`<div class="card"><div class="card-title"><span>UP 主观点 · ${u.n||'UP 主'}</span><span class="src">${u.auto?'自动摘录 · 待归纳':'转写提炼'}</span></div>`+
         `<div class="up-t">${esc(u.t||'')}</div>`+
         (u.p||[]).map(pt=>`<div class="up-pt"><span class="up-dot">·</span><span class="up-tx">${esc(pt)}</span></div>`).join('')+
         `<div class="up-link" onclick="window.open('https://www.bilibili.com/video/${u.k}','_blank')">在 B 站看原视频 ›</div></div>`;

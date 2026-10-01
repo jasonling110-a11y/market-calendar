@@ -58,10 +58,27 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 
 
 def _opener():
+    """⚠️ 必须显式禁用环境代理。
+    实测本机与 CI 环境都挂着 HTTP(S)_PROXY，走代理访问 B 站会
+    「Tunnel connection failed: 502」，而直连完全正常 —— 一开始被误判成 B 站改版。
+    """
     cj = http.cookiejar.CookieJar()
     return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
         urllib.request.HTTPCookieProcessor(cj),
         urllib.request.HTTPSHandler(context=CTX))
+
+
+def _warmup(op):
+    """先访问一次主站拿到 buvid3。
+    不带这个 cookie 调 api.bilibili.com 会直接返回 412（风控），
+    预热一次即可，无需登录态。"""
+    try:
+        op.open(urllib.request.Request(
+            "https://www.bilibili.com/",
+            headers={"User-Agent": UA, "Accept": "text/html"}), timeout=20).read()
+    except Exception:
+        pass
 
 
 def _json(op, url, ref="https://www.bilibili.com/"):
@@ -77,7 +94,7 @@ def fetch_video_list(op):
     """按 UP 主名搜索并过滤出该 UP 的视频（多页，按发布时间倒序）"""
     seen, out = set(), []
     kw = urllib.parse.quote(UP_NAME)
-    for page in range(1, 4):
+    for page in range(1, 6):
         try:
             d = _json(op,
                       f"https://api.bilibili.com/x/web-interface/search/type"
@@ -86,7 +103,10 @@ def fetch_video_list(op):
         except Exception as e:
             print(f"  [warn] 搜索第 {page} 页失败：{str(e)[:50]}")
             continue
-        for v in (((d.get("data") or {}).get("result")) or []):
+        res = ((d.get("data") or {}).get("result")) or []
+        if not res:
+            break
+        for v in res:
             if str(v.get("mid")) != UP_MID:
                 continue
             bv = v.get("bvid")
@@ -105,16 +125,38 @@ def fetch_video_list(op):
     return out
 
 
-def download_audio(bvid):
+def dump_cookies(op, path):
+    """把预热拿到的 cookie 写成 Netscape 格式给 yt-dlp 用。
+    yt-dlp 没有 buvid3 同样会被 412 挡掉。"""
+    lines = ["# Netscape HTTP Cookie File"]
+    for h in op.handlers:
+        cj = getattr(h, "cookiejar", None)
+        if cj is None:
+            continue
+        for c in cj:
+            lines.append("\t".join([
+                c.domain, "TRUE" if c.domain.startswith(".") else "FALSE",
+                c.path or "/", "TRUE" if c.secure else "FALSE",
+                str(int(c.expires or 0)), c.name, c.value or ""]))
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    return path
+
+
+def download_audio(bvid, cookie_file=None):
     """下载音频，返回文件路径"""
     target = os.path.join(AUDIO_DIR, bvid)
     for f in os.listdir(AUDIO_DIR):
         if f.startswith(bvid) and not f.endswith(".part"):
             return os.path.join(AUDIO_DIR, f)
     cmd = [sys.executable, "-m", "yt_dlp", "--no-warnings", "--quiet",
-           "-f", "ba", "-o", target + ".%(ext)s",
-           f"https://www.bilibili.com/video/{bvid}"]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+           # 同样必须绕开环境代理，否则 yt-dlp 走代理访问 B 站会失败
+           "--proxy", ""]
+    if cookie_file and os.path.exists(cookie_file):
+        cmd += ["--cookies", cookie_file]
+    cmd += ["-f", "ba", "-o", target + ".%(ext)s",
+            f"https://www.bilibili.com/video/{bvid}"]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if r.returncode != 0:
         raise RuntimeError((r.stderr or "")[:120])
     for f in os.listdir(AUDIO_DIR):
@@ -175,11 +217,8 @@ def main():
 
     print(f"[1/3] 抓取 UP 主「{UP_NAME}」视频列表 ...")
     op = _opener()
-    try:
-        op.open(urllib.request.Request("https://www.bilibili.com/",
-                                       headers={"User-Agent": UA}), timeout=20).read()
-    except Exception:
-        pass
+    _warmup(op)
+    cookie_file = dump_cookies(op, os.path.join(DATA, "_bili_cookies.txt"))
     vids = fetch_video_list(op)
     print(f"      找到 {len(vids)} 个视频，最新：{vids[0]['d'] if vids else '-'}")
 
@@ -197,7 +236,7 @@ def main():
     jobs = []
     for i, v in enumerate(todo, 1):
         try:
-            p = download_audio(v["bvid"])
+            p = download_audio(v["bvid"], cookie_file)
             jobs.append({"bvid": v["bvid"], "d": v["d"], "t": v["t"], "path": p})
             print(f"  ({i}/{len(todo)}) ✓ {v['d']} {v['t'][:28]}")
         except Exception as e:

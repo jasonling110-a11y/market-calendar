@@ -45,6 +45,8 @@ if os.path.exists(MACRO_PATH):
 MACRO_BY_MD = {}
 # 指标 -> 最新一期有效数据，用于未来事件的「最近一期」锚点
 MACRO_LATEST = {}
+# 指标 -> {报告期(YYMM): 数据点}：日历行自带报告期，用它做第二套匹配
+MACRO_BY_RP = {}
 # 指标键 -> {n 名称, u 单位, i 重要度}：与紧凑数组配合，避免每个数据点重复存名称
 INDICATORS = {k: {"n": v["n"], "u": v["u"], "i": v.get("i", 2)}
               for k, v in MACRO.items()}
@@ -87,7 +89,12 @@ def _canon_cal(s):
     s = (s or "").replace("：", ":").replace("（", "(").replace("）", ")")
     for w in _CANON_DROP:
         s = s.replace(w, "")
-    return re.sub(r":+", ":", s).strip(": ")
+    s = re.sub(r":+", ":", s)
+    # 剥掉口径里的「非」：东财会把同一个数同时排「核心CPI:季调:当月同比」与
+    # 「核心CPI:非季调:当月同比」两行，不归一化就当成两个指标各占一行。
+    while ":非:" in s:
+        s = s.replace(":非:", ":")
+    return s.strip(": ")
 
 
 CAL2MACRO = {
@@ -95,6 +102,10 @@ CAL2MACRO = {
     ("美国", "核心CPI:环比"): "us_ccpi",
     ("美国", "PPI:环比"): "us_ppi",
     ("美国", "核心PPI:环比"): "us_cppi",
+    ("美国", "PCE物价指数:季调"): "us_pce_h",
+    ("美国", "核心PCE物价指数:季调:环比"): "us_pce_m",
+    ("美国", "工业产出指数:制造业:季调:环比"): "us_indprod_mfg",
+    ("美国", "ADP就业人数(非农私营):新增就业:季调"): "us_adp",
     ("美国", "核心PCE物价指数:同比"): "us_pce",
     ("美国", "非农就业人数"): "us_nfp",
     ("美国", "失业率"): "us_unemp",
@@ -111,40 +122,100 @@ CAL2MACRO = {
     ("美国", "GDP:不变价:环比"): "us_gdp",
     ("中国", "CPI:同比"): "cn_cpi_y",
     ("中国", "CPI:环比"): "cn_cpi",
+    ("中国", "CPI:累计同比"): "cn_cpi_acc",
     ("中国", "PPI:全部工业品:同比"): "cn_ppi_y",
+    ("中国", "PPI:全部工业品:累计同比"): "cn_ppi_acc",
     ("中国", "GDP:不变价:同比"): "cn_gdp",
     ("中国", "M2:同比"): "cn_m2_y",
     ("中国", "制造业PMI"): "cn_pmi_off",
+    # 东财日历里中国这条的完整名是「非制造业PMI:商务活动」（统计局口径）
+    ("中国", "非制造业PMI:商务活动"): "cn_pmi_nonm",
     ("中国", "非制造业PMI"): "cn_pmi_nonm",
     ("中国", "贷款市场报价利率(LPR):1年"): "cn_lpr",
+    ("中国", "社会消费品零售总额:同比"): "cn_retail",
+    ("中国", "社会消费品零售总额:累计同比"): "cn_retail_acc",
+    ("中国", "央行外汇储备"): "cn_fxres",
     ("中国", "外汇储备"): "cn_fxres",
+    ("中国", "外汇储备:值"): "cn_fxres",
+    ("中国", "新增人民币贷款"): "cn_newloan",
     ("中国", "工业增加值:同比"): "cn_indprod",
+    ("中国", "工业增加值:累计同比"): "cn_indprod_acc",
+    ("中国", "出口金额:累计同比"): "cn_export_acc",
+    ("中国", "进口金额:累计同比"): "cn_import_acc",
     # 注：cn_export / cn_import 是「以美元计算出口/进口年率」（当月同比），
-    # 而东财日历里出口/进口金额只提供「累计同比」，口径不同。
+    # 而东财日历里的「出口金额」不写口径、无法确认是当月还是累计，
     # 宁可不挂值，也不要把累计同比的数字挂到当月同比的行上。
     ("中国", "社会融资规模存量"): "cn_shrong",
 }
+
+# 备用映射：这些日历条目在东财当前数据里还没出现（或口径存疑不宜挂），
+# 先留着映射，将来真出现了就自动生效；但**不参与**「名字对不上」的告警，
+# 免得每次构建都刷一屏假警报、把真正的问题埋掉。
+CAL2MACRO_SPARE = {
+    ("中国", "M2:同比"), ("中国", "制造业PMI"),
+    ("中国", "非制造业PMI"),
+    ("中国", "社会消费品零售总额:累计同比"),
+    ("中国", "外汇储备"), ("中国", "外汇储备:值"),
+    ("中国", "新增人民币贷款"),
+    ("美国", "零售销售月率"),
+}
 CAL2MACRO_N = {(_canon_cal(c), _canon_cal(n)): k for (c, n), k in CAL2MACRO.items()}
+
+# 自动映射：东财宏观接口（fetch_macro.fetch_us_east）会把东财原始指标名存在 meta["cn"]，
+# 形如「美国:CPI:季调:环比」。把它按同样的规则规范化后与日历条目名对齐，
+# 就不用每加一个指标都手写一条 CAL2MACRO —— 实测 22 个美国指标里 15 个能自动对上。
+CAL2MACRO_AUTO = {}
+for _k, _v in MACRO.items():
+    _cn = _v.get("cn")
+    if not _cn:
+        continue
+    _p = str(_cn).replace("：", ":").split(":", 1)
+    if len(_p) == 2 and _p[0].strip():
+        CAL2MACRO_AUTO[(_canon_cal(_p[0]), _canon_cal(_p[1]))] = _k
+
+# 自动映射对不上的少数几个：两家对同一指标的叫法不同
+# （东财宏观叫「供应管理协会(ISM):PMI」，东财日历叫「ISM:PMI:制造业」）。
+# 这些只能显式写死，键是「日历条目规范化后的名字」。
+CAL2MACRO_ALIAS = {
+    ("美国", "ISM:PMI:制造业"): "us_ism",
+    ("美国", "ISM:服务业PMI"): "us_ism_svc",
+    ("美国", "GDP:不变价:环比"): "us_gdp",
+    ("美国", "成屋签约销售指数"): "us_pendsale",
+    ("美国", "ADP就业人数(非农私营):新增就业"): "us_adp",
+}
 
 
 def _cal_key(country, name):
-    """东财有些行的名称自带国家前缀（如「美国EIA原油库存:变动值」），
-    有些又没有（如「EIA原油库存:变动值」），统一把前缀剥掉再查表。"""
+    """把一条日历条目映射到宏观指标键（挂上「实际/预期/前值」用）。
+    东财有些行的名称自带国家前缀（如「美国EIA原油库存:变动值」），
+    有些又没有（如「EIA原油库存:变动值」），统一把前缀剥掉再查表。
+
+    查表顺序：自动映射（东财宏观名） → 显式别名 → 人工表。
+    """
     cc, nn = _canon_cal(country), _canon_cal(name)
     if cc and nn.startswith(cc):
         nn = nn[len(cc):].lstrip(": ")
-    return CAL2MACRO_N.get((cc, nn)) or CAL2MACRO_N.get((cc, _canon_cal(name)))
+    return (CAL2MACRO_AUTO.get((cc, nn))
+            or CAL2MACRO_ALIAS.get((cc, nn))
+            or CAL2MACRO_N.get((cc, nn))
+            or CAL2MACRO_N.get((cc, _canon_cal(name))))
 
-# ============ 财经日历的「事件 / 动态」过滤 ============
-# 用户要求：重大事件只保留欧洲、美国、中国、日本、韩国这五大资本市场的消息。
-# 东财日历里真正有用的是 kind=0 的数据条目；kind=1/2 混了大量展会、招商、
-# 国事访问、企业发布（如「广州国际五金电器博览会」「伊朗外长将访华」
-# 「平陆运河建成通航」），这些与资本市场无关，属于噪音，直接剔除。
-#
-# 判断顺序：先按关键词剔除展会/访问类，再要求地点落在五大市场；
-# 地点为空时，必须命中央行/监管/交易所等金融机构关键词才保留
-# （央行官员讲话的地点经常是空的，但内容很重要，不能一刀切删掉）。
+# ============ 财经日历的过滤（中美核心数据）============
+# 用户明确要求（2026-10）：
+#   「抓取的重要的事件还是太杂了，我只要核心的中美发布的数据，
+#     并把具体的数据值写上去。」
+# 所以策略从「五大市场全收」收紧为「只收中美 + 只收核心读数」：
+#   1) 主体必须是美国 / 中国（欧盟、英国、日本、韩国、中国港澳台、地方城市全部剔除）
+#   2) kind=0 经济数据：必须命中核心指标，且不是「子项」
+#      —— 不排子项的话，一次 ISM 会排 7 行（物价/新订单/就业/自有库存/供应商交付/产出），
+#         一次非农会排 8 行，一次 EIA 会排 4 行，真正要看的主指数反而被淹没
+#   3) kind=1/2 事件与动态：只留中美央行 / 最高层 / 监管的日程，
+#      其余（展会、论坛、地方活动、企业发布、官员行程）一律不落库
 
+# 只关注这两大主体的发布
+CAL_KEEP_CITY = {"美国", "中国"}
+
+# 展会/论坛/国事访问等与资本市场无关的噪音
 CAL_JUNK = re.compile(
     r"博览会|展览会|展会|展销会|交易会|洽谈会|对接会|推介会|招商|研讨会|论坛|"
     r"峰会|年会|大会|发布会|新品发布|启动仪式|开幕|闭幕|挂牌仪式|"
@@ -152,56 +223,67 @@ CAL_JUNK = re.compile(
     r"通航|通车|竣工|开工|投产|建成|落成|"
     r"选美|赛事|锦标赛|马拉松|演唱会|电影|剧集|综艺")
 
-# 五大资本市场之外的主体：出现即剔除（这些央行/国家的议息会议不属于关注范围）
-CAL_OTHER = re.compile(
-    r"加拿大|澳大利亚|澳洲|新西兰|巴西|印度|俄罗斯|土耳其|墨西哥|印尼|"
-    r"南非|瑞典|挪威|丹麦|瑞士|泰国|越南|马来西亚|新加坡|沙特|以色列|阿根廷|"
-    r"伊朗|伊拉克|埃及|尼日利亚|巴基斯坦")
+# 核心读数白名单：真正影响资产定价的中美指标
+CAL_CORE = re.compile(
+    r"CPI|PPI|PCE|物价|"
+    r"GDP|PMI|工业增加值|社会消费品零售|固定资产投资|耐用品|工业产出|工业增加值|"
+    r"非农|失业率|ADP|初请|时薪|小时工资|"
+    r"利率|LPR|MLF|M2|货币供应|社会融资|社融|外汇储备|"
+    r"贸易差额|贸易帐|进出口|出口金额|进口金额|"
+    r"消费者信心|密歇根|谘商会|"
+    r"EIA原油库存|"
+    r"新屋开工|成屋销售|未决房屋")
 
-# 话题闸门：只有命中「资本市场 / 宏观政策」关键词的条目才留。
-# 这是关键一步 —— 光看地点挡不住噪音：「上海国际动漫月」「ChinaJoy」「名酒展」
-# 都在五大市场内，但跟资本市场毫无关系。
-CAL_TOPIC = re.compile(
-    r"美联储|联储|美国证券交易委员会|SEC|美国财政部|美国商务部|美国劳工部|"
-    r"欧央行|欧洲央行|欧盟|欧元区|"
-    r"日本央行|韩国央行|英格兰银行|"
-    r"中国人民银行|央行|货币政策|议息|利率决议|利率|"
-    r"国务院常务会议|国务院金融委|金融委|中央政治局|政治局|中央经济工作会议|政府工作报告|"
-    r"证监会|银保监|金融监管|证券交易所|交易所|"
-    r"财政部|统计局|发改委|国资委|"
-    r"国债|债券|IPO|注册制|退市|印花税|汇率|社融|M2|LPR|MLF|"
-    r"GDP|CPI|PPI|PMI|非农|关税")
+# 核心指标下的子项：主读数已单独列出，子项只会把日历刷屏。
+# ⚠️ 锚点必须打准：「非农私营」不能裸写，否则会把真正要看的
+#    「ADP就业人数(非农私营):新增就业」一起误杀。
+CAL_SUB = re.compile(
+    r"^新增非农私营就业人数|"
+    r"平均每周制造业工作时间|制造业平均小时工资|"
+    r"EIA(汽油|精炼油|俄克拉荷马)|"
+    r"职位空缺|消费信贷|堪萨斯|地方联储|"
+    # ⚠️ 必须限定在 ISM 之下：「非制造业PMI:商务活动」是**中国统计局**的官方
+    #    非制造业读数（主数据），裸写会把中国这条一起误杀，实测丢了 4 行。
+    r"ISM:[^:]*:商务活动")
 
+# 美国独有的子项（中国同名指标是主读数，不能一刀切）：
+#   · 出口金额/进口金额 —— 贸易差额的子项
+#   · 非农就业人数 / 新增就业人数 —— 存量口径，市场看的是「新增非农就业人数」
+#   · ISM 分项（物价/新订单/就业/自有库存/供应商交付/产出/库存）—— 只留主指数
+CAL_US_SUB = re.compile(
+    r"^出口金额|^进口金额|^新增就业人数|^非农就业人数|"
+    r"^耐用品:新增订单:非|"
+    r"ISM:.*:(物价|新订单|就业|自有库存|供应商交付|产出|库存)")
 
-# 五大资本市场之外的发布主体：加拿大/澳洲/巴西/俄罗斯/瑞士/新加坡的数据
-# （合计 500+ 条）不在关注范围，按国家字段直接剔除。
-# 中国香港/澳门/台湾同属中国资本市场，保留。
-CAL_KEEP_CITY = {
-    "美国", "中国", "中国香港", "中国澳门", "中国台湾", "香港", "澳门",
-    "欧盟", "欧元区", "英国", "德国", "法国", "意大利", "西班牙", "荷兰",
-    "比利时", "奥地利", "芬兰", "爱尔兰", "葡萄牙", "希腊", "卢森堡",
-    "日本", "韩国",
-}
+# 事件 / 动态：只留中美最核心的日程
+CAL_EVENT_OK = re.compile(
+    r"美联储|FOMC|议息|货币政策会议纪要|利率决议|"
+    r"中央政治局|中央经济工作会议|政府工作报告|全国人民代表大会|"
+    r"国务院常务会议|国民经济运行情况|统计局|"
+    r"中国人民银行|中国央行|证监会|交易所|财政部|LPR")
 
 
 def _cal_keep(country, name, kind):
     """财经日历条目是否保留。kind: 0=数据 1=事件 2=动态
 
-    kind=0 是经济数据，按发布主体所在市场过滤（五大市场之外不要）；
-    kind=1/2 是东财的「事件 / 动态」，里面混了大量展会、招商、漫展、
-    产品首发、国事访问，必须靠话题闸门筛。
+    只保留美国 / 中国的条目；数据类再过一遍核心指标白名单与子项黑名单，
+    事件 / 动态类只放行央行与最高层的日程。
     """
-    if kind in (0, None):
-        c = (country or "").strip()
-        if not c:
-            return True        # 没标主体的数据不误杀
-        return c in CAL_KEEP_CITY
+    c = (country or "").strip()
+    # 东财有些条目主体写的是城市（北京市 / 法兰克福市）或没写，
+    # 一律不放行 —— 用户只要「中美」，城市级/无主体的条目几乎全是活动类的噪音。
+    if c not in CAL_KEEP_CITY:
+        return False
     n = name or ""
-    if CAL_JUNK.search(n):
+    if kind in (1, 2):
+        if CAL_JUNK.search(n):
+            return False
+        return bool(CAL_EVENT_OK.search(n))
+    if CAL_SUB.search(n):
         return False
-    if CAL_OTHER.search(n):
+    if c == "美国" and CAL_US_SUB.search(n):
         return False
-    return bool(CAL_TOPIC.search(n))
+    return bool(CAL_CORE.search(n))
 
 
 for key, meta_ in MACRO.items():
@@ -220,6 +302,10 @@ for key, meta_ in MACRO.items():
         MACRO_BY_MD.setdefault(pt["d"], []).append(
             (meta_.get("i", 2),
              [key, pt.get("a"), pt.get("f"), pt.get("p"), pt.get("y"), pt.get("m")]))
+        # 报告期索引（只收有实际值的：没有值挂上去也没意义）
+        if pt.get("rp") and pt.get("a") is not None:
+            MACRO_BY_RP.setdefault(key, {})[str(pt["rp"])] = \
+                [key, pt.get("a"), pt.get("f"), pt.get("p"), pt.get("y"), pt.get("m")]
     # ⚠️ 语义边界：MACRO_LATEST 只作为「上次实际公布值」锚点使用。
     # 历史序列里的 f 是**当时那一期**的市场预期，不是未来某一期的预期，
     # 直接搬到未来事件上会变成「2025 年的旧预期冒充 2026 年的当期预期」，因此这里不导出 f。
@@ -231,10 +317,60 @@ for key, meta_ in MACRO.items():
             "p": last_actual.get("p"), "y": last_actual.get("y"),
             "m": last_actual.get("m"),
         }
+# 指标键 -> [(公布日, 紧凑数据点)]，按日期升序。
+# 用途：日历里的公布日与数据源的公布日有时差几天（东财日历写「20:30 美国 CPI」，
+# 宏观源的 PUBLISH_DATE 偶尔差 1 天；中国的统计局口径指标是按规则推算公布日，
+# 实测能差 4 天）。没有这层容差，这些行就只能显示一个光秃秃的指标名。
+MACRO_BY_KEY = {}
+for _d, _arr in MACRO_BY_MD.items():
+    for _imp, _pt in _arr:
+        MACRO_BY_KEY.setdefault(_pt[0], []).append((_d, _pt))
+for _k in MACRO_BY_KEY:
+    MACRO_BY_KEY[_k].sort(key=lambda x: x[0])
+
+_MACRO_TOL = 4      # 天。月度指标相隔约 30 天，±4 天不可能串到相邻一期
+
+
+def macro_near(key, date, tol=_MACRO_TOL):
+    """在 ±tol 天内找该指标「最靠近 date」的那个数据点，找不到返回 None。"""
+    pts = MACRO_BY_KEY.get(key)
+    if not pts:
+        return None
+    try:
+        tgt = dt.date.fromisoformat(date)
+    except ValueError:
+        return None
+    best, best_gap = None, None
+    for ds, pt in pts:
+        try:
+            gap = abs((dt.date.fromisoformat(ds) - tgt).days)
+        except ValueError:
+            continue
+        if gap <= tol and (best_gap is None or gap < best_gap):
+            best, best_gap = pt, gap
+    return best
+
+
+def macro_period(key, rp):
+    """按「报告期」找数据点（日历行第 6 位就是报告期，如 2608）。
+
+    为什么需要第二套匹配：按公布日 ±4 天匹配有个天花板——FRED 只给报告期、
+    没有公布日，靠 x 天偏移推算出来的公布日很容易差出 4 天以外，
+    结果就是「数据其实有，但日历行挂不上去」。报告期是两边都确定的量，
+    用它兜底能把这类缺口一次补上。
+    """
+    rp = str(rp or "").strip()
+    if not rp:
+        return None
+    return (MACRO_BY_RP.get(key) or {}).get(rp)
+
+
 OUT = os.path.join(ROOT, "miniprogram", "data")
 os.makedirs(OUT, exist_ok=True)
 
-TODAY = dt.date(2026, 9, 26)
+# ⚠️ 必须是「当天」，不能写死：写死会让未来日历窗口越跑越偏
+# （例如钉在 9-26，到 10 月就有一周的数据被算成「已过去」而提前消失）。
+TODAY = dt.date.today()
 HORIZON = 90                      # 未来三个月
 
 CAT_IMP = {"shock": 3, "macro_us": 2, "macro_cn": 2, "macro_eu": 2,
@@ -381,6 +517,9 @@ def build_history(sector):
             "t": s.get("t") or s.get("title") or "",
             "p": s["p"],
             "n": s.get("n") or "艾丽的无废话财经",
+            # auto=True 表示这是 summarize_up.py 的机器摘录（还没经 AI 归纳），
+            # 界面上要如实标注，避免把原文摘句当成结论
+            "auto": bool(s.get("auto")),
         }
         slot = touch(d)
         if slot["u"] is None:
@@ -396,15 +535,53 @@ def build_history(sector):
     for ymd, arr in (CAL.get("days") or {}).items():
         slot = touch(ymd)
         have = {p[0] for p in (slot["v"] or [])}
-        used = set()      # 同一天同一指标只挂第一次（如「累计同比」与「同比」并存）
-        out = []
+
+        # ---- 第一步：过滤 + 同一天同一指标的不同口径变体只留一条 ----
+        # 东财对同一个数会排好几行：「核心CPI:季调:当月同比」和
+        # 「核心CPI:非季调:当月同比」是同一个数字，全列出来只会把日历刷屏。
+        # 规范化（_canon_cal 会剥掉 季调/非季调/当月/初值/…）后同名即视为同一指标，
+        # 优先保留「能挂上宏观值」的那一条。
+        cand = []                      # [(tm, ci, ni, im, kd, pd, sig)]
+        best_sig = {}                  # sig -> 该组当前选中的候选下标
         for tm, ci, ni, im, kd, pd in arr:
             country = cal_countries[ci] if 0 <= ci < len(cal_countries) else ""
             name = cal_names[ni] if 0 <= ni < len(cal_names) else ""
             if not _cal_keep(country, name, kd):
                 stats_cal_dropped[kd] = stats_cal_dropped.get(kd, 0) + 1
                 continue
+            idx = len(cand)
+            cand.append([tm, ci, ni, im, kd, pd, None, country, name])
+            if kd != 0:
+                continue
+            sig = (ci, _canon_cal(name))
+            cand[idx][6] = sig
+            cur = best_sig.get(sig)
+            if cur is None:
+                best_sig[sig] = idx
+            elif (_cal_key(country, name) is not None
+                  and _cal_key(cand[cur][7], cand[cur][8]) is None):
+                best_sig[sig] = idx        # 新的这条能挂上值，换掉旧的
+        drop_idx = set()
+        for sig, idx in best_sig.items():
+            for j, c in enumerate(cand):
+                if j != idx and c[6] == sig:
+                    drop_idx.add(j)
+        cand = [c for j, c in enumerate(cand) if j not in drop_idx]
+
+        # ---- 第二步：挂宏观值，并写出行数据 ----
+        used = set()      # 同一天同一指标只挂第一次（如「累计同比」与「同比」并存）
+        out = []
+        for tm, ci, ni, im, kd, pd, _sig, country, name in cand:
             mk = _cal_key(country, name)
+            # 公布日有偏差时，把最近的那一期数值补进当天的数值表再挂上去。
+            # 补进去不会造成重复显示：日历行一旦带上实际值，「关键数值」卡片
+            # 就会按 linked 把这个指标剔除（见 build_preview 的 dvals 过滤）。
+            if mk and mk not in have:
+                _pt = macro_near(mk, ymd) or macro_period(mk, pd)
+                if _pt:
+                    slot.setdefault("v", [])
+                    slot["v"].append(list(_pt))
+                    have.add(mk)
             if mk and (mk not in have or mk in used):
                 mk = None                       # 该日没这个指标的数值，或已挂过
             if mk:
@@ -622,13 +799,15 @@ def main():
     print(f"[!] 日历挂上实际值：{stats['cal_linked']} 条 "
           f"（这些不再重复出现在数值卡片里）")
     # 映射校验：CAL2MACRO 里对不上的键说明名字写错了，必须显式报出来
+    # （CAL2MACRO_SPARE 是明知当前日历里没有的备用映射，不算错，跳过）
     cal_pairs = set()
     for arr in (CAL.get("days") or {}).values():
         for tm, ci, ni, im, kd, pd in arr:
             if kd == 0:
                 cal_pairs.add((_canon_cal(CAL["countries"][ci]),
                                _canon_cal(CAL["names"][ni])))
-    bad = [k for k in CAL2MACRO_N if k not in cal_pairs]
+    bad = [k for k in CAL2MACRO_N
+           if k not in cal_pairs and k not in CAL2MACRO_SPARE]
     if bad:
         print(f"[!] CAL2MACRO 有 {len(bad)} 条对不上日历名称（名字写错或该指标未收录）：")
         for c, n in bad[:12]:
