@@ -51,12 +51,20 @@ BILI_ENABLED = True
 
 # 抓 B 站视频要点需要 whisper / yt-dlp，装在虚拟环境里；
 # 其余脚本只用标准库，用当前解释器即可。
+# 需要第三方包的脚本必须用虚拟环境跑：
+#   fetch_bilibili.py → yt-dlp / faster-whisper
+#   fetch_macro.py    → akshare（LPR / 社融 / M2 这三个指标只有 akshare 有源）
+# 实测踩过：漏掉 fetch_macro.py，工作台跑一百次 LPR 也不会更新，
+# 因为系统 python 没有 akshare，脚本会静默沿用旧数据。
+VENV_SCRIPTS = {"fetch_bilibili.py", "fetch_macro.py"}
 VENV_PY = os.path.expanduser("~/.workbuddy/binaries/python/envs/default/bin/python")
 SYS_PY = sys.executable
 
 
 def pick_py(script):
-    return VENV_PY if script == "fetch_bilibili.py" and os.path.exists(VENV_PY) else SYS_PY
+    if script in VENV_SCRIPTS and os.path.exists(VENV_PY):
+        return VENV_PY
+    return SYS_PY
 
 
 # ---------------------------------------------------------------- 抓取任务
@@ -65,13 +73,19 @@ QUICK_STEPS = [
     ("财经日历（含未来排期）", "fetch_calendar.py"),
     ("A 股板块行情", "fetch_sectors.py"),
     ("宏观数值与市场预期", "fetch_macro.py"),
+    # 新转写但还没提炼的视频先自动摘录入包，避免日历上出现空窗
+    ("B 站要点兜底摘录", "summarize_up.py"),
     ("重建数据包", "build_dataset.py"),
     ("重新生成页面", "build_preview.py"),
     ("日历订阅源", "build_ics.py"),
 ]
 
-# 完整模式：多出 B 站视频转写（要跑 whisper，5～10 分钟）
-FULL_STEPS = [("B 站视频要点（语音转写）", "fetch_bilibili.py")] + QUICK_STEPS
+# 完整模式：多出 B 站视频转写（要跑 whisper，5～10 分钟），
+# 末尾再把结果推到 GitHub —— B 站这一步云端做不了（要 yt-dlp + whisper，
+# 且 B 站不给字幕），只有本机能抓。不推上去，手机上打开的云版就看不到新视频。
+# 只放在完整模式：每天 1 次提交，比每次快速刷新都推要干净得多。
+FULL_STEPS = ([("B 站视频要点（语音转写）", "fetch_bilibili.py")] + QUICK_STEPS
+              + [("同步到云端（GitHub）", "push_via_api.py")])
 
 
 class State:
@@ -180,9 +194,12 @@ def data_age_hours():
 
 
 # ---------------------------------------------------------------- B 站这条链路
-# 为什么要单独记账：转写（whisper）能在本机自动跑，但「要点」必须由 AI
-# 阅读转写后写入 up_summary.json —— 纯脚本做不了这一步。所以这里只负责
-# 判断「该不该再转写一次」以及「还差几个视频没提炼」，让缺口在界面上可见。
+# 为什么要单独记账：转写（whisper）能在本机自动跑；「要点」现在有两条路——
+# 优先用 AI 读转写后写进 up_summary.json（质量最好），AI 没顾上的由
+# summarize_up.py 自动摘录兜底（界面会标注「自动摘录 · 待归纳」）。
+# 所以这里负责判断「该不该再转写一次」，并把「转写了但还没要点」的缺口暴露出来。
+# ⚠️ 这条链路云端（GitHub Actions）做不了：要 yt-dlp + whisper，且这些视频没有字幕，
+#    只能靠本机跑，跑完再由 push_via_api.py 推上去。
 def load_json(path, default):
     try:
         with open(path, encoding="utf-8") as f:
@@ -260,7 +277,10 @@ def run_pipeline(mode, trigger):
             STATE.line(f"── {name} ──")
             try:
                 proc = subprocess.Popen(
-                    [pick_py(script), script],
+                    # -u 关闭缓冲。子进程的 stdout 接到管道时是块缓冲（4~8KB），
+                    # 不加这个，界面上会「卡在某一步好几分钟、一行日志都不出」，
+                    # 明明是正常在跑，看起来像死了 —— 排查问题时最容易被误导。
+                    [pick_py(script), "-u", script],
                     cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, bufsize=1,
                 )
@@ -292,7 +312,7 @@ def run_pipeline(mode, trigger):
     if miss:
         STATE.line(f"[!] 有 {len(miss)} 个 B 站视频已转写但还没有要点："
                    f"{'、'.join(miss[:5])}{' 等' if len(miss) > 5 else ''}")
-        STATE.line("    这一步需要 AI 阅读转写后写入 tools/data/up_summary.json，脚本无法代劳")
+        STATE.line("    跑一次 summarize_up.py 会自动摘录兜底；AI 提炼的版本会覆盖它")
 
     STATE.finish(ok, err)
     stamp = datetime.now().strftime("%H:%M:%S")
