@@ -112,13 +112,13 @@ body{overflow:hidden}
 .cell.today.sel .num{box-shadow:0 0 0 3px rgba(255,59,48,.3)}
 .dots{height:6px;display:flex;align-items:center;justify-content:center;margin-top:2px}
 .dot{width:5px;height:5px;border-radius:50%;margin:0 2px}
-.dot-h{background:#8e8e93}.dot-u{background:var(--warn)}.dot-n{background:var(--info)}
+.dot-h{background:#8e8e93}.dot-u{background:var(--warn)}.dot-n{background:var(--info)}.dot-v{background:#bf5af2}
 
 /* ===== 图例 ===== */
 .legend{display:flex;gap:16px;padding:12px 2px 16px;margin-top:auto;font-size:11px;color:var(--text3);flex-shrink:0}
 .legend span{display:flex;align-items:center;gap:6px}
 .legend i{width:5px;height:5px;border-radius:50%;display:inline-block}
-.legend i.h{background:#8e8e93}.legend i.u{background:var(--warn)}.legend i.n{background:var(--info)}
+.legend i.h{background:#8e8e93}.legend i.u{background:var(--warn)}.legend i.n{background:var(--info)}.legend i.v{background:#bf5af2}
 
 /* ===== 右侧内容区 ===== */
 .panel{flex:1;overflow-y:auto;padding:16px 26px 50px}
@@ -259,6 +259,11 @@ body{overflow:hidden}
 .up-dot{font-size:15px;color:var(--text3);margin-right:7px;flex-shrink:0;line-height:23px}
 .up-tx{font-size:14.5px;line-height:23px;flex:1}
 .up-link{margin-top:7px;padding-top:6px;border-top:1px solid var(--sep);font-size:11px;color:#3b9cff;text-align:right;cursor:pointer}
+/* 「最近一期」兜底卡片：说明为什么这天会出现别的日期的内容，不能悄悄塞进去 */
+.up-note{font-size:11px;color:var(--text2);background:var(--surface2);border-radius:8px;
+  padding:7px 10px;margin-bottom:10px;line-height:1.55}
+.up-jump{color:#c48bff;cursor:pointer;white-space:nowrap}
+.card.up-latest{border-color:rgba(191,90,242,.3)}
 .empty{padding:46px 30px;text-align:center;font-size:13px;color:var(--text3)}
 .empty-sub{margin-top:7px;font-size:11px;color:#4a4a4c}
 .nodata{padding:3px 20px 8px;font-size:10.5px;color:var(--text3);text-align:center}
@@ -394,6 +399,7 @@ __HEAD_SCRIPTS__
         <span><i class="h"></i>有数据</span>
         <span><i class="u"></i>预告</span>
         <span><i class="n"></i>笔记</span>
+        <span><i class="v"></i>视频</span>
       </div>
     </div>
 
@@ -487,6 +493,16 @@ const UP={}; UPCOMING.forEach(d=>UP[d.date]=d.items);
 const IND=META.indicators||{};
 // 数值存的是紧凑数组 [指标键,实际,预期,前值,同比,环比]，这里展开成对象
 const CALC=META.calCountries||[], CALN=META.calNames||[];
+// 有 UP 视频的日期（升序），只算一次 —— 5497 天里每次渲染都重扫一遍不划算。
+const UP_DATES=Object.keys(HISTORY).filter(k=>{const v=HISTORY[k];return !!(v&&v.u&&v.u.length)}).sort();
+// 不晚于 date 的最近一期视频。
+// 打开页面默认落在「今天」，而艾丽并不是每天都发 —— 没有这个兜底，用户看到的就是
+// 空白一块，会以为功能坏了（这个疑问已经出现过两次）。有兜底时卡片上必须写清来源日期。
+function latestUpOnOrBefore(date){
+  for(let i=UP_DATES.length-1;i>=0;i--){ if(UP_DATES[i]<=date) return UP_DATES[i]; }
+  return null;
+}
+function jumpTo(d){const t=new Date(d+'T00:00:00');year=t.getFullYear();month=t.getMonth()+1;sel=d;renderGrid();renderPanel();focusPanel()}
 let calFilter='key', calAllCache=[], calKeyCache=[];
 function expandCal(arr,vbk){return (arr||[]).map((x,i)=>{const mk=x[6]||'';const v=mk?vbk[mk]:null;
   let pd='';if(x[5]){const mm=+x[5].slice(2);
@@ -512,6 +528,8 @@ function diffDays(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T0
 function histSet(y,m){const p=y+'-'+pad(m)+'-';const s={};for(const k in HISTORY){if(k.indexOf(p)===0)s[k]=true}return s}
 function monthEmpty(y,m){const p=y+'-'+pad(m)+'-';for(const k in HISTORY){if(k.indexOf(p)===0)return false}return true}
 function upSet(y,m){const p=y+'-'+pad(m)+'-';const s={};for(const k in UP)if(k.indexOf(p)===0)s[k]=true;return s}
+// 当月有 UP 视频的日子 —— 日历上要打点，否则用户根本不知道哪天有艾丽的总结
+function vidSet(y,m){const p=y+'-'+pad(m)+'-';const s={};for(const k of UP_DATES){if(k.indexOf(p)===0)s[k]=true}return s}
 
 function fp(p){const n=+p;return (n>0?'+':(n<0?'-':''))+Math.abs(n).toFixed(2)+'%'}
 function fv(v,u){if(v===null||v===undefined||v==='')return '—';const n=+v;if(isNaN(n))return '—';
@@ -527,6 +545,7 @@ function renderGrid(){
   const _g=(META&&META.generatedAt)?META.generatedAt.slice(5,16):'—';
   document.getElementById('msub').textContent='数据 '+_g+' 更新 · 点此说明';
   const hs=histSet(year,month), us=upSet(year,month), ndays=noteDays(year,month);
+  const vids=vidSet(year,month);
   const total=dim(year,month), lead=new Date(year,month-1,1).getDay();
   const prev=addM(year,month,-1), pt=dim(prev.y,prev.m), next=addM(year,month,1);
   let cells=[];
@@ -539,7 +558,8 @@ function renderGrid(){
     const dot=(hs[s]&&mode==='history')?'<div class="dot dot-h"></div>':'';
     const ndot=(ndays[s])?'<div class="dot dot-n"></div>':'';
     const dot2=(us[s]&&mode==='upcoming')?'<div class="dot dot-u"></div>':'';
-    return `<div class="${cls}" onclick="pick(${c.y},${c.m},${c.d})"><div class="num">${c.d}</div><div class="dots">${dot}${dot2}${ndot}</div></div>`;
+    const vdot=(vids[s]&&mode==='history')?'<div class="dot dot-v"></div>':'';
+    return `<div class="${cls}" onclick="pick(${c.y},${c.m},${c.d})"><div class="num">${c.d}</div><div class="dots">${dot}${dot2}${ndot}${vdot}</div></div>`;
   }).join('');
 }
 
@@ -576,6 +596,21 @@ function decorate(items,date){
 }
 
 function tagHtml(it){return `<span class="tag ${it.cls}">${it.label}</span>`}
+
+// UP 要点卡片。srcDate 非空表示这是「最近一期」兜底，必须把来源日期显式写出来，
+// 否则用户会以为这条视频真就是所选那天发的。
+function upCardHtml(u,srcDate){
+  const tag=u.auto?'自动摘录 · 待归纳':'转写提炼';
+  const ds=srcDate?srcDate.slice(5).replace('-','/'):'';
+  const src=srcDate?('最近一期 · '+ds):tag;
+  return `<div class="card${srcDate?' up-latest':''}">`+
+    `<div class="card-title"><span>UP 主观点 · ${esc(u.n||'UP 主')}</span><span class="src">${src}</span></div>`+
+    (srcDate?`<div class="up-note">这一天没有新视频 · 下面是最近一期 `+
+      `<span class="up-jump" onclick="jumpTo('${srcDate}')">${ds} ›</span></div>`:'')+
+    `<div class="up-t">${esc(u.t||'')}</div>`+
+    (u.p||[]).map(pt=>`<div class="up-pt"><span class="up-dot">·</span><span class="up-tx">${esc(pt)}</span></div>`).join('')+
+    `<div class="up-link" onclick="window.open('https://www.bilibili.com/video/${u.k}','_blank')">在 B 站看原视频 ›</div></div>`;
+}
 
 function renderPanel(){
   const md=sel.slice(5);
@@ -642,13 +677,16 @@ function renderPanel(){
             (g?`<span class="tag g-${x.r.toLowerCase()}">${g}</span>`:'')+
             `<span class="ev-t">${x.t}</span></div><div class="ev-d">${x.d}</div></div></div>`}).join('')+`</div>`;
     }
-    (day.u||[]).forEach(u=>{
-      html+=`<div class="card"><div class="card-title"><span>UP 主观点 · ${u.n||'UP 主'}</span><span class="src">${u.auto?'自动摘录 · 待归纳':'转写提炼'}</span></div>`+
-        `<div class="up-t">${esc(u.t||'')}</div>`+
-        (u.p||[]).map(pt=>`<div class="up-pt"><span class="up-dot">·</span><span class="up-tx">${esc(pt)}</span></div>`).join('')+
-        `<div class="up-link" onclick="window.open('https://www.bilibili.com/video/${u.k}','_blank')">在 B 站看原视频 ›</div></div>`;
-    });
-    if(!(day.s&&day.s.up&&day.s.up.length)&&!(day.e&&day.e.length)&&!dvals.length&&!cal.length&&!(day.u&&day.u.length))
+    (day.u||[]).forEach(u=>{ html+=upCardHtml(u,''); });
+    // 这天没有视频时，把最近一期顶上来，并在卡片里写清它来自哪天。
+    // 打开页面默认落在「今天」，艾丽未必每天都发 —— 不兜底就是空白一块，
+    // 用户会以为「视频总结又没了」，其实只是今天还没发。
+    const fbDate=latestUpOnOrBefore(sel);
+    if(!(day.u&&day.u.length)&&fbDate){
+      (HISTORY[fbDate].u||[]).forEach(u=>{ html+=upCardHtml(u,fbDate); });
+    }
+    // 有「最近一期」兜底卡片时不再叠「暂无收录」，两句话摆在一起自相矛盾
+    if(!(day.s&&day.s.up&&day.s.up.length)&&!(day.e&&day.e.length)&&!dvals.length&&!cal.length&&!fbDate)
       html+=`<div class="empty">${sel} 暂无收录<div class="empty-sub">这一天没有发布重要数据，也没有收录到重大事件</div></div>`;
   } else {
     const items=decorate(UP[sel],sel);
