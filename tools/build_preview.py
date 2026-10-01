@@ -165,6 +165,12 @@ body{overflow:hidden}
      用 display:contents 把标题/副标题/导航摊平成同级 flex 项，再重排成：
      第一行「月份 + 导航」，第二行「数据时间（占满整行）」。 */
   .hdr{align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  /* 768~900px（iPad 竖屏 / Mac 窗口拉窄）也走这套窄屏布局，7 列网格会被拉到
+     每格上百像素宽、只有 44px 高，看着很散。给日历本体一个宽度上限并居中。
+     必须用 align-self:center + 明确宽度，不能写 margin:auto —— .cal-col 是
+     column 方向的 flex 容器，子项带 auto 外边距会「收缩到内容宽度」而不是撑开居中，
+     实测会把星期表头「日一二三四五六」压成一坨。 */
+  .wk,.grid,.legend,.seg,.hdr{width:min(100%,420px);align-self:center}
   .hdr>div:first-child{display:contents}
   .m-title{order:1;font-size:23px;flex:0 0 auto}
   .hdr-r{order:2;margin-left:auto}
