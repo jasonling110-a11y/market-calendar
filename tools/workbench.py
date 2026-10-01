@@ -367,10 +367,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def _index_path_safe(self):
-        """禁止路径穿越：只允许 preview/ 目录下的文件"""
+        """禁止路径穿越：只允许 preview/ 目录，以及透出的 webapp/sdk/"""
         p = urllib.parse.urlparse(self.path).path
+        if p.startswith("/sdk/"):
+            return os.path.normpath(os.path.join(ROOT, "webapp", p.lstrip("/"))).startswith(
+                os.path.join(ROOT, "webapp", "sdk"))
         target = os.path.normpath(os.path.join(PREVIEW, p.lstrip("/")))
         return target.startswith(PREVIEW)
+
+    def translate_path(self, path):
+        """preview/ 里没有云 SDK。这里从 webapp/sdk/ 直接透出，而不是再复制一份 ——
+        本机工作台也要能登录同步笔记，但同一份 62KB 代码不该在仓库里存两处。"""
+        p = urllib.parse.urlparse(path).path
+        if p.startswith("/sdk/"):
+            return os.path.join(ROOT, "webapp", p.lstrip("/"))
+        return super().translate_path(path)
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path

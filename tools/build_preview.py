@@ -309,7 +309,9 @@ body{overflow:hidden}
 .nvtools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:9px;margin-bottom:10px;border-bottom:1px solid var(--sep)}
 .nvt{font-size:12px;color:var(--info);padding:5px 11px;border:1px solid var(--sep);border-radius:7px;cursor:pointer;white-space:nowrap}
 .nvt:active{opacity:.55}
-.nvt-tip{font-size:10.5px;color:var(--text3);margin-left:auto}
+/* 提示文案里会出现邮箱（可能很长且没有空格），不给上限会把整行撑破 */
+.nvt-tip{font-size:10.5px;color:var(--text3);margin-left:auto;max-width:100%;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chips{display:flex;flex-wrap:wrap;margin-top:12px}
 .chip{padding:5px 14px;font-size:13px;color:var(--text2);background:var(--surface);border:1px solid var(--sep);border-radius:999px;margin:0 8px 8px 0;cursor:pointer}
 .chip.on{color:#fff;background:var(--info);border-color:var(--info)}
@@ -480,8 +482,23 @@ __HEAD_SCRIPTS__
 const HISTORY = __HISTORY__;
 const UPCOMING = __UPCOMING__;
 const META = __META__;
-// 云版页面会注入 {endpoint, publishableKey}；本地与 GitHub Pages 版为 null（不启用云笔记）
-const CLOUD_CFG = __CLOUD_CONFIG__;
+// 云配置三种宿主都会注入，但只有「网关放行的来源」才能真的用起来。
+// 实测预检（OPTIONS / .cloud/database/rest）结果：
+//   http://127.0.0.1:8787、http://localhost:8787、http://127.0.0.1:9999 → 204 放行
+//   https://<app>.app.workbuddy.host（同源）                            → 204 放行
+//   https://xxx.github.io                                              → 403 拒绝
+// 所以 GitHub Pages 那份必须在这里关掉：否则会员显示一个「登录同步」按钮，
+// 点进去只会撞一堵 CORS 的墙，还不如不出现。
+const CLOUD_CFG_RAW = __CLOUD_CONFIG__;
+const CLOUD_CFG = cloudAllowed() ? CLOUD_CFG_RAW : null;
+function cloudAllowed(){
+  if(!CLOUD_CFG_RAW)return false;
+  if(location.protocol!=='http:'&&location.protocol!=='https:')return false; // file:// 的 Origin 是 null
+  const h=location.hostname||'';
+  if(h==='localhost'||h==='127.0.0.1'||h==='[::1]')return true;   // 本机工作台
+  if(/\.workbuddy\.host$/.test(h))return true;                    // 云端托管（同源）
+  return false;                                                    // 其余一律关掉
+}
 
 const CAT={macro_us:{l:'美国数据',c:'us'},macro_cn:{l:'中国数据',c:'cn'},macro_eu:{l:'欧洲数据',c:'eu'},
   macro_jp:{l:'日本数据',c:'jp'},macro_kr:{l:'韩国数据',c:'kr'},shock:{l:'突发事件',c:'shock'},
@@ -871,13 +888,26 @@ function setLgMsg(t,ok){const e=document.getElementById('lgMsg');e.textContent=t
 function safeTags(v){try{const a=JSON.parse(v||'[]');return Array.isArray(a)?a:[]}catch(e){return []}}
 
 async function initCloud(){
-  if(!CLOUD_CFG||!window.WorkBuddyCloud)return;
+  if(!CLOUD_CFG)return;
+  // 非云版（本机工作台）不写死 <script>，需要时才拉这份 62KB 的 SDK。
+  // Pages 版会走到这里之前就被 CLOUD_CFG=null 挡掉，不会产生任何请求。
+  if(!window.WorkBuddyCloud)await loadSdk();
+  if(!window.WorkBuddyCloud)return;
   try{
     cloud=WorkBuddyCloud.createWorkBuddyCloud({
       endpoint:CLOUD_CFG.endpoint, publishableKey:CLOUD_CFG.publishableKey});
   }catch(e){return}
   document.getElementById('cloudBtn').style.display='';
   await bootCloud();
+}
+function loadSdk(){
+  return new Promise(function(res){
+    const s=document.createElement('script');
+    s.src='./sdk/workbuddy-cloud.js';
+    s.onload=function(){res(true)}; s.onerror=function(){res(false)};
+    document.head.appendChild(s);
+    setTimeout(function(){res(!!window.WorkBuddyCloud)},6000);
+  });
 }
 async function bootCloud(){
   if(!cloud)return;
@@ -999,9 +1029,16 @@ async function startForgot(){
   setLgMsg('验证码已发送到邮箱，请输入验证码和新密码',true);
 }
 async function afterLogin(){
+  await bootCloud();          // bootCloud 内只做下行拉取
+  // 登录前写的笔记还只在本机 localStorage 里，必须补一次上行。
+  // 不补的话这批笔记「看着还在、却永远上不去」，另一台设备始终看不到 ——
+  // 用户只会觉得「同步了但没同步」，而且全程没有任何报错提示。
+  const n=await cloudPushAll();
   closeLogin();
-  await bootCloud();
   renderNotesView(); renderGrid(); renderPanel();
+  // 写在 renderCloudBar 之后，否则会被它覆盖掉
+  if(n)document.getElementById('cloudTip').textContent=
+    '已登录 '+((cloudUser&&cloudUser.email)||'')+' · 已同步 '+n+' 条笔记';
 }
 async function doSignOut(){
   try{ await cloud.auth.signOut(); }catch(e){}
@@ -1169,7 +1206,7 @@ function wbRefresh(mode){
 wbInit();
 
 renderGrid(); renderPanel();
-initCloud();   // 云版：恢复登录态并拉取云端笔记；本地 / Pages 版直接返回
+initCloud();   // 恢复登录态并拉取云端笔记；宿主不放行跨域时 CLOUD_CFG 为 null，直接返回
 document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')go(-1);if(e.key==='ArrowRight')go(1);if(e.key==='t')goToday()});
 </script>
 </body>
@@ -1189,13 +1226,22 @@ def build_html(cloud_mode):
     upcoming = load_js_module("upcoming.js")
     meta = load_js_module("meta.js")
 
-    if cloud_mode:
-        cfg = {}
-        if os.path.exists(CCFG):
-            with open(CCFG, encoding="utf-8") as f:
-                cfg = json.load(f)
-        if not cfg.get("endpoint") or not cfg.get("publishableKey"):
+    cfg = {}
+    if os.path.exists(CCFG):
+        with open(CCFG, encoding="utf-8") as f:
+            cfg = json.load(f)
+    if not cfg.get("endpoint") or not cfg.get("publishableKey"):
+        if cloud_mode:
             raise SystemExit(f"[✗] 缺少云配置 {CCFG}（需先开通云服务，写回 endpoint 与 publishableKey）")
+        cfg = {}
+    # 云配置现在三种宿主都注入，由页面按「自己跑在哪个域」决定要不要启用（见 cloudAllowed）。
+    # 原因：本机工作台（127.0.0.1）也接云笔记时，电脑上写的笔记才能跟手机共用一份；
+    # 而 GitHub Pages 那份是 preview/index.html 的副本，只能靠运行时判断关掉。
+    # publishableKey 本就是可公开的键（数据由 RLS 按 owner_id 隔离），放进去没有额外风险。
+    c = (json.dumps({"endpoint": cfg["endpoint"], "publishableKey": cfg["publishableKey"]})
+         if cfg else "null")
+
+    if cloud_mode:
         head = "\n".join([
             f'<script src="{SDK_URL}"></script>',
             f'<script src="{DATA_BASE}/history.js"></script>',
@@ -1203,13 +1249,13 @@ def build_html(cloud_mode):
             f'<script src="{DATA_BASE}/meta.js"></script>',
         ])
         h, u, m = "(window.MC_HISTORY||{})", "(window.MC_UPCOMING||[])", "(window.MC_META||{})"
-        c = json.dumps({"endpoint": cfg["endpoint"], "publishableKey": cfg["publishableKey"]})
     else:
+        # 非云版不写死 SDK 的 <script>：Pages 那份是这里的副本且云功能会被关掉，
+        # 写死只会白 404 一次。需要登录时再按需注入（见 loadSdk）。
         head = ""
         h = json.dumps(history, ensure_ascii=False, separators=(",", ":"))
         u = json.dumps(upcoming, ensure_ascii=False, separators=(",", ":"))
         m = json.dumps(meta, ensure_ascii=False, separators=(",", ":"))
-        c = "null"
 
     return (TPL
             .replace("__HEAD_SCRIPTS__", head)
