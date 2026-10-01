@@ -505,6 +505,27 @@ def build_upcoming():
     return out
 
 
+def write_web_data(days, upcoming, meta):
+    """给「云版页面」用的数据文件，放在 docs/data/ 下随 GitHub Pages 发布。
+
+    为什么需要它：云版页面部署在 WorkBuddy 域名（云服务要求请求来自本应用域名），
+    而数据仍由 GitHub Actions 每天更新到 GitHub Pages。两边不同域，
+    所以云版页面不能内嵌数据，必须运行时加载。
+    用 <script> 而不是 fetch：script 标签不受跨域限制，省掉 CORS 的麻烦。
+    """
+    d = os.path.join(ROOT, "docs", "data")
+    os.makedirs(d, exist_ok=True)
+    total = 0
+    for name, obj in (("history", days), ("upcoming", upcoming), ("meta", meta)):
+        p = os.path.join(d, name + ".js")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(f"window.MC_{name.upper()}=")
+            json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
+            f.write(";\n")
+        total += os.path.getsize(p)
+    print(f"[✓] 网页数据包：docs/data/*.js  {total/1024:.0f}KB（云版页面运行时加载）")
+
+
 def compact_cal_dicts(days):
     """财经日历的两张字典表按「实际被引用」裁剪。
 
@@ -589,6 +610,8 @@ def main():
         f.write("// 自动生成，勿手改 —— 数据元信息\nmodule.exports = ")
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))
         f.write(";\n")
+
+    write_web_data(days, upcoming, meta)
 
     total = os.path.getsize(os.path.join(OUT, "history.js"))
     yrs = stats.get("yearRange") or ["-", "-"]

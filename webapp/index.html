@@ -1,34 +1,4 @@
-# -*- coding: utf-8 -*-
-"""生成可在浏览器直接打开的 H5 预览版（数据内嵌，无需服务器）"""
-import json
-import os
-import sys
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-DATA = os.path.join(ROOT, "miniprogram", "data")
-OUT = os.path.join(ROOT, "preview", "index.html")
-
-# ---- 云版（部署在 WorkBuddy 域名，笔记跨设备同步）----
-CLOUD_OUT = os.path.join(ROOT, "webapp", "index.html")
-CCFG = os.path.join(HERE, "cloud_config.json")      # 开通云服务后写入
-# 数据仍在 GitHub Pages，云版页面运行时从这里加载
-DATA_BASE = "https://jasonling110-a11y.github.io/market-calendar/data"
-SDK_URL = ("https://cdn.jsdelivr.net/npm/"
-           "@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js")
-
-
-def load_js_module(name):
-    """读取 module.exports = {...}; 形式的 JS 数据模块"""
-    with open(os.path.join(DATA, name), encoding="utf-8") as f:
-        s = f.read()
-    s = s[s.index("module.exports = ") + len("module.exports = "):].strip()
-    if s.endswith(";"):
-        s = s[:-1]
-    return json.loads(s)
-
-
-TPL = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -295,7 +265,10 @@ body{overflow:hidden}
 .lg-note b{color:var(--text2)}
 .lg-sep{height:1px;background:var(--sep);margin:2px 0}
 </style>
-__HEAD_SCRIPTS__
+<script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"></script>
+<script src="https://jasonling110-a11y.github.io/market-calendar/data/history.js"></script>
+<script src="https://jasonling110-a11y.github.io/market-calendar/data/upcoming.js"></script>
+<script src="https://jasonling110-a11y.github.io/market-calendar/data/meta.js"></script>
 </head>
 <body>
 <div class="app">
@@ -407,11 +380,11 @@ __HEAD_SCRIPTS__
 </div>
 
 <script>
-const HISTORY = __HISTORY__;
-const UPCOMING = __UPCOMING__;
-const META = __META__;
+const HISTORY = (window.MC_HISTORY||{});
+const UPCOMING = (window.MC_UPCOMING||[]);
+const META = (window.MC_META||{});
 // 云版页面会注入 {endpoint, publishableKey}；本地与 GitHub Pages 版为 null（不启用云笔记）
-const CLOUD_CFG = __CLOUD_CONFIG__;
+const CLOUD_CFG = {"endpoint": "https://market-calendar-71280.app.workbuddy.host", "publishableKey": "wbpk_1bw8OOOB07aPP6UKsGy6u1_Y0kuQFIuyrXubLSxzNZvNNo9qkav1Z5w"};
 
 const CAT={macro_us:{l:'美国数据',c:'us'},macro_cn:{l:'中国数据',c:'cn'},macro_eu:{l:'欧洲数据',c:'eu'},
   macro_jp:{l:'日本数据',c:'jp'},macro_kr:{l:'韩国数据',c:'kr'},shock:{l:'突发事件',c:'shock'},
@@ -1042,61 +1015,3 @@ document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')go(-1);if(e.key==
 </script>
 </body>
 </html>
-"""
-
-
-def build_html(cloud_mode):
-    """cloud_mode=False：数据内嵌（离线可用，本地预览与 GitHub Pages 用）
-       cloud_mode=True ：数据运行时加载 + 云笔记（部署在 WorkBuddy 域名用）
-
-    云版为什么不能内嵌数据：云服务要求请求来自本应用域名，所以页面部署在
-    WorkBuddy 域名；而数据每天由 GitHub Actions 更新到 GitHub Pages。
-    两边不同域，只能运行时用 <script> 加载（script 不受跨域限制）。
-    """
-    history = load_js_module("history.js")
-    upcoming = load_js_module("upcoming.js")
-    meta = load_js_module("meta.js")
-
-    if cloud_mode:
-        cfg = {}
-        if os.path.exists(CCFG):
-            with open(CCFG, encoding="utf-8") as f:
-                cfg = json.load(f)
-        if not cfg.get("endpoint") or not cfg.get("publishableKey"):
-            raise SystemExit(f"[✗] 缺少云配置 {CCFG}（需先开通云服务，写回 endpoint 与 publishableKey）")
-        head = "\n".join([
-            f'<script src="{SDK_URL}"></script>',
-            f'<script src="{DATA_BASE}/history.js"></script>',
-            f'<script src="{DATA_BASE}/upcoming.js"></script>',
-            f'<script src="{DATA_BASE}/meta.js"></script>',
-        ])
-        h, u, m = "(window.MC_HISTORY||{})", "(window.MC_UPCOMING||[])", "(window.MC_META||{})"
-        c = json.dumps({"endpoint": cfg["endpoint"], "publishableKey": cfg["publishableKey"]})
-    else:
-        head = ""
-        h = json.dumps(history, ensure_ascii=False, separators=(",", ":"))
-        u = json.dumps(upcoming, ensure_ascii=False, separators=(",", ":"))
-        m = json.dumps(meta, ensure_ascii=False, separators=(",", ":"))
-        c = "null"
-
-    return (TPL
-            .replace("__HEAD_SCRIPTS__", head)
-            .replace("__HISTORY__", h)
-            .replace("__UPCOMING__", u)
-            .replace("__META__", m)
-            .replace("__CLOUD_CONFIG__", c))
-
-
-def main():
-    cloud_mode = "--cloud" in sys.argv
-    out = CLOUD_OUT if cloud_mode else OUT
-    html = build_html(cloud_mode)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    with open(out, "w", encoding="utf-8") as f:
-        f.write(html)
-    tag = "云版（外部数据 + 云笔记）" if cloud_mode else "预览版"
-    print(f"[✓] {tag}生成：{out}  ({os.path.getsize(out)/1024:.0f}KB)")
-
-
-if __name__ == "__main__":
-    main()
