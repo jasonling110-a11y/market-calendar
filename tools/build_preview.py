@@ -36,21 +36,26 @@ TPL = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>市场日历 · 预览</title>
 <style>
 :root{
   --bg:#000; --surface:#1c1c1e; --surface2:#2c2c2e; --sep:#38383a;
-  --text:#fff; --text2:#98989f; --text3:#636366;
+  --text:#fff; --text2:#98989f; --text3:#7d7d82;
   --up:#ff453a; --down:#30d158; --accent:#ff3b30; --warn:#ffd60a; --info:#0a84ff;
+  --st:env(safe-area-inset-top,0px); --sb:env(safe-area-inset-bottom,0px);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0;background:#0a0a0b;height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;color:var(--text)}
+html,body{margin:0;padding:0;background:#0a0a0b;height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;color:var(--text);-webkit-text-size-adjust:100%}
 body{overflow:hidden}
-.app{height:100vh;display:flex;flex-direction:column;position:relative;overflow:hidden}
+/* 100dvh 放在 100vh 后面：iOS Safari 的 100vh 含地址栏高度，比可视区高，
+   定高 + overflow:hidden 会把底部内容裁掉且永远滚不到。不支持的浏览器仍用 100vh。 */
+.app{height:100vh;height:100dvh;display:flex;flex-direction:column;position:relative;overflow:hidden}
 
 /* ===== 顶栏 ===== */
-.topbar{height:52px;flex-shrink:0;display:flex;align-items:center;gap:18px;padding:0 22px;border-bottom:1px solid var(--sep);background:#101012}
+/* 用 min-height:calc(52px + 安全区) 而不是固定 52px：全屏(PWA)时刘海会盖住内容。
+   若写成 height:52px 再加 padding-top:env(...)，内容会被padding挤扁 —— 必须把安全区算进最小高度。 */
+.topbar{min-height:calc(52px + var(--st));flex-shrink:0;display:flex;align-items:center;gap:18px;padding:var(--st) 22px 0;border-bottom:1px solid var(--sep);background:#101012}
 .brand{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;letter-spacing:.4px;flex-shrink:0}
 .brand-dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
 
@@ -62,12 +67,15 @@ body{overflow:hidden}
 
 /* ===== 日历头部 ===== */
 .hdr{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:12px}
+/* 左块必须 min-width:0 才能收缩：否则副标题变长时会去挤右侧导航，
+   导航是 flex-shrink 默认值 1，会被压窄到把「今天/笔记」截成「今/笔」。 */
+.hdr>div:first-child{flex:1 1 auto;min-width:0}
 .m-title{font-size:27px;font-weight:500;color:var(--accent);letter-spacing:.3px}
-.m-sub{display:block;font-size:11px;color:var(--text3);margin-top:3px}
-.hdr-r{display:flex;align-items:center}
+.m-sub{display:block;font-size:11px;color:var(--text3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdr-r{display:flex;align-items:center;flex-shrink:0}
 .nav{width:30px;height:30px;line-height:28px;text-align:center;font-size:18px;color:var(--text2);background:var(--surface2);border-radius:50%;margin-left:7px;cursor:pointer;user-select:none;transition:background .16s,color .16s}
 .nav:hover{background:#3a3a3c;color:var(--text)}
-.today{padding:0 13px;height:30px;line-height:30px;font-size:12.5px;color:var(--text);background:var(--surface2);border-radius:15px;margin-left:7px;cursor:pointer;transition:background .16s}
+.today{padding:0 13px;height:30px;line-height:30px;font-size:12.5px;color:var(--text);background:var(--surface2);border-radius:15px;margin-left:7px;cursor:pointer;white-space:nowrap;transition:background .16s}
 .today:hover{background:#3a3a3c}
 
 /* ===== 工作台状态（在顶栏内）===== */
@@ -122,12 +130,54 @@ body{overflow:hidden}
 .ph-w{font-size:12px;color:var(--text2);margin-left:9px}
 .card{background:var(--surface);border-radius:14px;padding:16px 18px;margin:0 auto 14px;max-width:900px;border:1px solid rgba(255,255,255,.055)}
 
-/* ===== 窄屏回退为上下排布 ===== */
+/* ===== 窄屏（手机 / 竖屏 iPad）：改成「整页滚动」 =====
+   原实现是上下两块各自内滚：body 与 .app 都 overflow:hidden，只有 .cal-col
+   和 .panel 自己能滚。手机上手指滑在顶栏、日历留白或卡片间隙上完全没有反应，
+   体感就是「往下滑不动」。再叠上 .app 用 100vh 定高（iOS 把地址栏也算进去），
+   底部一截被裁掉后永远够不着。
+   这里把三处一起松开：文档可滚 → .app 自然高度 → 面板不再自带滚动条。 */
 @media (max-width:900px){
-  .layout{flex-direction:column}
-  .cal-col{width:100%;border-right:none;border-bottom:1px solid var(--sep);max-height:48vh;flex-shrink:0}
-  .panel{padding:14px 14px 40px}
-  .topbar{padding:0 14px}
+  html,body{height:auto;overflow:visible}
+  .app{height:auto;min-height:100vh;min-height:100dvh;display:block;overflow:visible;
+       padding-bottom:var(--sb)}
+  .topbar{padding:var(--st) 14px 0;gap:10px;flex-wrap:wrap;min-height:calc(46px + var(--st))}
+  .layout{display:block;min-height:0}
+  .cal-col{width:auto;max-height:none;flex-shrink:1;overflow:visible;padding:12px 14px 0;
+           border-right:none;border-bottom:1px solid var(--sep)}
+  .content-col{display:block;min-height:0}
+  .panel{overflow:visible;padding:0 14px calc(36px + var(--sb))}
+
+  /* 选中日期吸顶：手机一屏放不下全天内容，滚动时最容易迷路的是「我在看哪天」。
+     .panel 及其父容器在窄屏都改成 overflow:visible，position:sticky 才生效。 */
+  .ph{position:sticky;top:0;z-index:8;background:var(--bg);max-width:none;
+      margin:0 -14px 10px;padding:10px 14px;border-bottom:1px solid var(--sep)}
+
+  /* 触屏热区：苹果建议不小于 44px，原来 30px 的圆形按钮在手机上很容易点空 */
+  .nav{width:38px;height:38px;line-height:36px;margin-left:6px}
+  .today{height:38px;line-height:38px;padding:0 13px;margin-left:6px}
+  .seg-i{height:36px;line-height:36px}
+  .cell{height:44px}
+  .num{width:32px;height:32px;line-height:32px;font-size:14px}
+  .cell:active{background:rgba(255,255,255,.13)}
+  .nav:active,.today:active{background:#3a3a3c}
+
+  /* 标题与导航挤不到一行，原来是硬换行 → 右侧出现一整行只有按钮的留白，浪费约 46px。
+     用 display:contents 把标题/副标题/导航摊平成同级 flex 项，再重排成：
+     第一行「月份 + 导航」，第二行「数据时间（占满整行）」。 */
+  .hdr{align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  .hdr>div:first-child{display:contents}
+  .m-title{order:1;font-size:23px;flex:0 0 auto}
+  .hdr-r{order:2;margin-left:auto}
+  .m-sub{order:3;flex:0 0 100%;margin-top:0;font-size:11px}
+  .card{padding:14px 15px;border-radius:13px}
+  .legend{padding:10px 2px 12px}
+  .wb{order:5;flex:1 1 100%;padding-bottom:8px}
+}
+
+/* 动效克制：系统开了「减弱动态效果」就把动画压到接近 0，避免无谓的位移干扰阅读 */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;
+    transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
 
 .card-title{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--text2);margin-bottom:12px;letter-spacing:.2px}
@@ -234,13 +284,15 @@ body{overflow:hidden}
 .va-wait{font-size:9.5px;color:var(--warn);margin-left:auto}
 .foot{padding:18px 0 6px;text-align:center}
 .foot-t{font-size:12px;color:var(--info);cursor:pointer}
-.sheet{position:absolute;left:0;right:0;top:0;bottom:0;background:var(--bg);z-index:20;display:none;flex-direction:column}
+/* 弹层用 fixed 而不是 absolute：窄屏下 .app 已是自然高度（=整篇文档高），
+   absolute 会让弹层跟着长到文档高度，标题栏一滚就跑掉、内部滚动条也失效。 */
+.sheet{position:fixed;left:0;right:0;top:0;bottom:0;background:var(--bg);z-index:20;display:none;flex-direction:column}
 .sheet.on{display:flex}
-.sh-hd{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--sep)}
+.sh-hd{display:flex;align-items:center;justify-content:space-between;padding:calc(14px + var(--st)) 18px 14px;border-bottom:1px solid var(--sep)}
 .sh-t{font-size:16px;font-weight:600}
 .sh-x{font-size:20px;color:var(--text2);cursor:pointer}
 .sh-c,.sh-s{font-size:14px;color:var(--info);cursor:pointer}
-.sh-bd{flex:1;overflow-y:auto;padding:14px 18px}
+.sh-bd{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 18px calc(24px + var(--sb))}
 .sh-bd::-webkit-scrollbar{width:0}
 .ta{width:100%;height:190px;background:var(--surface);border-radius:10px;padding:12px;font-size:14px;line-height:22px;color:var(--text);border:none;outline:none;resize:none;font-family:inherit}
 .nvtools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:9px;margin-bottom:10px;border-bottom:1px solid var(--sep)}
@@ -272,8 +324,10 @@ body{overflow:hidden}
 .ntx{font-size:13px;color:var(--text);line-height:20px;word-break:break-all}
 .nem{padding:12px 0 4px;font-size:11.5px;color:var(--text3);text-align:center}
 .nbtn{font-size:12px;color:var(--info);cursor:pointer}
-.fab{position:absolute;right:18px;bottom:22px;width:46px;height:46px;border-radius:50%;background:var(--info);color:#fff;font-size:26px;line-height:44px;text-align:center;box-shadow:0 4px 12px rgba(10,132,255,.4);cursor:pointer;z-index:5}
-.hint{position:absolute;left:0;right:0;bottom:0;background:rgba(28,28,30,.96);border-top:1px solid var(--sep);padding:14px 18px 22px;font-size:12px;color:var(--text2);line-height:19px;display:none;z-index:9}
+.fab{position:absolute;right:18px;bottom:calc(22px + var(--sb));width:46px;height:46px;border-radius:50%;background:var(--info);color:#fff;font-size:26px;line-height:44px;text-align:center;box-shadow:0 4px 12px rgba(10,132,255,.4);cursor:pointer;z-index:5}
+/* 同样改 fixed：窄屏 .app 是自然高度，absolute+bottom:0 会落到整篇文档最底下，
+   弹出后要滚到底才看得见。 */
+.hint{position:fixed;left:0;right:0;bottom:0;background:rgba(28,28,30,.96);border-top:1px solid var(--sep);padding:14px 18px calc(22px + var(--sb));font-size:12px;color:var(--text2);line-height:19px;display:none;z-index:9}
 .hint.on{display:block}
 .hint b{color:var(--text)}
 
@@ -462,7 +516,10 @@ function biasOf(a,f){if(a==null||f==null)return null;const d=+a-+f;if(isNaN(d))r
 
 function renderGrid(){
   document.getElementById('mtitle').textContent=year+'年'+month+'月';
-  document.getElementById('msub').textContent='内置离线数据 · 点此查看更新方式';
+  // 原来这里写死「内置离线数据」，但云端版是运行时实时拉取的，写死会误导。
+  // 改成显示数据包的真实生成时间，三种宿主（本机 / Pages / 云端）都成立。
+  const _g=(META&&META.generatedAt)?META.generatedAt.slice(5,16):'—';
+  document.getElementById('msub').textContent='数据 '+_g+' 更新 · 点此说明';
   const hs=histSet(year,month), us=upSet(year,month), ndays=noteDays(year,month);
   const total=dim(year,month), lead=new Date(year,month-1,1).getDay();
   const prev=addM(year,month,-1), pt=dim(prev.y,prev.m), next=addM(year,month,1);
@@ -480,9 +537,18 @@ function renderGrid(){
   }).join('');
 }
 
-function pick(y,m,d){sel=y+'-'+pad(m)+'-'+pad(d);year=y;month=m;renderGrid();renderPanel()}
+// 手机上日历占掉大半屏，选完日子若不把内容顶上来，用户会以为「点了没反应」。
+// 桌面端不用滚（内容本来就在右边同时可见），所以只在窄屏触发；
+// 系统开了「减弱动态效果」时用瞬时跳转，不做平滑动画。
+function focusPanel(){
+  if(window.innerWidth>900)return;
+  const p=document.getElementById('panel'); if(!p)return;
+  const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+  p.scrollIntoView(reduce?false:{behavior:'smooth',block:'start'});
+}
+function pick(y,m,d){sel=y+'-'+pad(m)+'-'+pad(d);year=y;month=m;renderGrid();renderPanel();focusPanel()}
 function go(d){const b=addM(year,month,d);year=b.y;month=b.m;renderGrid()}
-function goToday(){const t=new Date();year=t.getFullYear();month=t.getMonth()+1;sel=TODAY;renderGrid();renderPanel()}
+function goToday(){const t=new Date();year=t.getFullYear();month=t.getMonth()+1;sel=TODAY;renderGrid();renderPanel();focusPanel()}
 function setMode(m){mode=m;document.getElementById('segH').className='seg-i'+(m==='history'?' on':'');
   document.getElementById('segU').className='seg-i'+(m==='upcoming'?' on':'');renderGrid();renderPanel()}
 
@@ -953,25 +1019,43 @@ async function cloudSave(note){
   }
 }
 
+// 三种宿主的数据来源各不相同，说明文案必须跟着变。
+// 旧版写死「内置离线数据包，数据随版本发布，不会自动变化」—— 在云端版上是错的：
+// 云端页面每次打开都会实时去 GitHub Pages 取最新数据，而且不需要重新发布。
 function showUpdateInfo(){
-  alert('数据更新说明\n\n'
-    +'【当前】内置离线数据包，数据随版本发布，不会自动变化。\n\n'
-    +'【开启每日自动更新】需要三步：\n'
-    +'1. 开通云开发并填写环境 ID（app.js 的 cloudEnv / useCloud）\n'
-    +'2. 部署 syncCalendar 云函数（含 08:00 与 18:00 定时触发）\n'
-    +'3. 建立 market_daily 等数据库集合\n\n'
-    +'部署后：云函数每日抓取并落库，客户端打开时自动合并，\n'
-    +'顶部会显示「云端 18:05 更新」，点一下可手动刷新。\n\n'
-    +'可更新的数据：A 股当日板块、宏观数值、本期市场预期。\n'
-    +'需发版更新的数据：历史事件库。\n\n'
-    +'详细步骤见项目根目录 DEPLOY.md');
+  const st=(META&&META.stats)||{}, sr=(META&&META.sectorRange)||['—','—'];
+  const g=(META&&META.generatedAt)||'—';
+  const h=location.hostname||'';
+  let src,how;
+  if(h==='localhost'||h==='127.0.0.1'||h===''){
+    src='本机工作台（只在这台 Mac 上运行）';
+    how='后台定时跑：08:30 / 12:30 / 18:00 快速刷新，21:30 完整更新（多出 B 站视频语音转写）。\n'
+       +'也可以点顶部的「快速刷新 / 完整更新」手动触发。';
+  }else if(/github\.io$/.test(h)){
+    src='GitHub Pages（云端托管）';
+    how='GitHub Actions 每天自动跑一次，抓取 A 股板块、宏观数据与财经日历后提交。\n'
+       +'这台 Mac 开不开机都不影响——但 B 站视频要点需要本机转写后才会同步上来。';
+  }else{
+    src='云端应用（WorkBuddy 托管）';
+    how='页面每次打开都实时去 GitHub Pages 取最新数据，所以数据更新不用重新发布。\n'
+       +'唯一例外是 B 站视频要点：那部分要本机跑过语音转写才会生成。';
+  }
+  alert('数据说明\n\n'
+    +'【数据时间】'+g+'\n'
+    +'【数据来源】'+src+'\n\n'
+    +'【更新方式】'+how+'\n\n'
+    +'【覆盖范围】'+st.days+' 天历史 · '+st.events+' 条事件 · '+st.sector_days
+    +' 天 A 股板块行情（'+sr[0]+' ~ '+sr[1]+'）\n'
+    +'【日历挂值】'+st.cal_linked+' / '+st.cal_items+' 条事件已挂上具体数值\n\n'
+    +'【口径说明】数值直接标在日历行上，含实际值 / 前值 / 同比 / 环比；\n'
+    +'显示「—」表示该期还没公布或暂时没有可信来源——宁缺勿错，不猜数。');
 }
 function toggleHint(){
   const h=document.getElementById('hint');
   h.className = h.className.includes('on') ? 'hint' : 'hint on';
   h.innerHTML=`<b>数据覆盖</b>：${META.stats.days} 天历史 · ${META.stats.events} 条真实事件 · ${META.stats.sector_days} 天 A 股板块行情（${META.sectorRange[0]} ~ ${META.sectorRange[1]}）<br>
   <b>三档置信度</b>：<span class="conf conf-confirmed">已官宣</span> 官方公布日期 ｜ <span class="conf conf-estimated">规律推算</span> 按发布规律推算 ｜ <span class="conf conf-rumored">待官宣</span> 市场预期未官宣<br>
-  <b>更新</b>：主包内置离线数据，断网可用；配置云开发后由云函数每日 08:00 / 18:00 抓取并落库，客户端自动合并。<br>
+  <b>更新</b>：本机工作台定时抓取（08:30 / 12:30 / 18:00 快速，21:30 完整含 B 站转写）；云端由 GitHub Actions 每日更新，手机上打开即是最新。<br>
   <b>免责</b>：仅用于信息整理与复盘参考，不构成投资建议，日程与行情以官方发布为准。`;
 }
 

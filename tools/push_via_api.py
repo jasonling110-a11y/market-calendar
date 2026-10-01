@@ -41,6 +41,13 @@ def load_token():
         return json.load(f)["token"]
 
 
+# 必须显式绕开环境代理。这台机器上 HTTPS_PROXY / HTTP_PROXY 指向 127.0.0.1:57009，
+# urllib 会自动走它，而该代理会丢掉 Authorization 头 —— GitHub 对「未认证的写请求」
+# 返回的是 404（不是 401），现象看起来像仓库不存在或 token 失效，极易误判。
+# 实测：同一请求 curl 加 --noproxy 返回 201，走代理返回 404 / 连接失败。
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 def call(token, method, path, body=None, timeout=180):
     """调 API，带 3 次重试（代理层偶发 502）"""
     url = path if path.startswith("http") else API + path
@@ -54,7 +61,7 @@ def call(token, method, path, body=None, timeout=180):
     last = ""
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with _OPENER.open(req, timeout=timeout) as r:
                 raw = r.read().decode("utf-8", "ignore")
                 return json.loads(raw) if raw.strip() else {}
         except urllib.error.HTTPError as e:
