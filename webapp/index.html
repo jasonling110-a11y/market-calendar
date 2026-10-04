@@ -377,6 +377,55 @@ a.ct-it:active{opacity:.6}
 .lg-note{font-size:11px;color:var(--text3);line-height:1.6}
 .lg-note b{color:var(--text2)}
 .lg-sep{height:1px;background:var(--sep);margin:2px 0}
+
+/* ===== 利润断层工作台（外部模块 · 整屏覆盖层）=====
+   顶栏标签刻意沿用 .seg/.seg-i 的观感（surface2 底 + #3a3a3c 选中），
+   让「切工作台」和「历史回顾/未来预告」看起来是同一套交互。 */
+.apptabs{display:flex;background:var(--surface2);border-radius:10px;padding:3px;flex-shrink:0}
+.apptab{appearance:none;-webkit-appearance:none;border:0;background:transparent;color:var(--text2);
+  font-family:inherit;font-size:13px;line-height:1;height:32px;padding:0 14px;border-radius:8px;cursor:pointer;
+  display:flex;align-items:center;gap:7px;white-space:nowrap;transition:.18s}
+.apptab:hover{color:var(--text)}
+.apptab[aria-selected="true"]{background:#3a3a3c;color:var(--text);font-weight:500}
+.apptab:focus-visible{outline:2px solid var(--info);outline-offset:2px}
+.apptab .ad{width:6px;height:6px;border-radius:50%;background:var(--text3)}
+.apptab[aria-selected="true"] .ad{background:var(--accent)}
+
+/* z-index 必须高于 .sheet(20)，否则「笔记」面板会盖在覆盖层上面。
+   这一层挂在 <body> 下（.app 的兄弟节点），刻意不做 .app 的子节点 ——
+   避免被 .app 的 overflow:hidden 连坐（虽然 fixed 一般不受影响，但没必要赌）。 */
+#gapShell{position:fixed;left:0;right:0;top:0;bottom:0;z-index:60;display:none;flex-direction:column;
+  background:#0a0a0b;height:100vh;height:100dvh}
+#gapShell.on{display:flex}
+.gap-bar{min-height:calc(52px + var(--st));flex-shrink:0;display:flex;align-items:center;gap:10px;
+  padding:var(--st) 18px 0;border-bottom:1px solid var(--sep);background:#101012}
+.gap-bar .t{flex:1;min-width:0;font-size:14px;font-weight:500;display:flex;align-items:baseline;gap:9px}
+.gap-bar .t em{font-style:normal;font-weight:400;font-size:11.5px;color:var(--text3)}
+.gap-btn{background:var(--surface2);border:1px solid var(--sep);color:var(--text);border-radius:9px;height:32px;
+  padding:0 13px;font-family:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap;text-decoration:none;
+  display:inline-flex;align-items:center;transition:.18s}
+.gap-btn:hover{background:#3a3a3c}
+.gap-btn:focus-visible{outline:2px solid var(--info);outline-offset:2px}
+.gap-stage{flex:1;min-height:0;position:relative;background:#0d1117}
+.gap-stage>iframe{display:block;width:100%;height:100%;border:0;background:#0d1117}
+.gap-ov{position:absolute;left:0;right:0;top:0;bottom:0;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:13px;padding:26px;background:#0d1117;color:#9aa7b4;font-size:13px;text-align:center}
+.gap-ov.on{display:flex}
+.gap-ov h3{margin:0;font-size:15px;font-weight:600;color:#e6edf3}
+.gap-ov p{margin:0;max-width:430px;line-height:1.75}
+.gap-ov .ops{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:2px}
+.gap-spin{width:26px;height:26px;border-radius:50%;border:2px solid #2c2c2e;border-top-color:var(--info);
+  animation:gapspin .8s linear infinite}
+@keyframes gapspin{to{transform:rotate(360deg)}}
+@media (max-width:900px){
+  .apptab{padding:0 11px;font-size:12.5px}
+  .gap-bar{padding:var(--st) 12px 0;gap:8px}
+  .gap-bar .t em{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .apptab,.gap-btn{transition:none}
+  .gap-spin{animation-duration:3s}
+}
 </style>
 <script src="./sdk/workbuddy-cloud.js"></script>
 <script src="https://jasonling110-a11y.github.io/market-calendar/data/history.js"></script>
@@ -387,6 +436,12 @@ a.ct-it:active{opacity:.6}
 <div class="app">
   <div class="topbar">
     <div class="brand"><span class="brand-dot"></span>市场日历</div>
+    <!-- 工作台切换：本功能只新增这一组标签 + 下方那个覆盖层，
+         日历原有的 DOM 结构、状态与行为一字未改。 -->
+    <div class="apptabs" role="tablist" aria-label="工作台切换">
+      <button type="button" class="apptab" id="tabCal" role="tab" aria-selected="true"><span class="ad"></span>市场日历</button>
+      <button type="button" class="apptab" id="tabGap" role="tab" aria-selected="false" aria-controls="gapShell"><span class="ad"></span>利润断层</button>
+    </div>
     <div class="wb" id="wb" style="display:none">
       <span class="wb-dot" id="wbDot"></span>
       <span class="wb-t" id="wbText">正在连接本地服务…</span>
@@ -492,6 +547,31 @@ a.ct-it:active{opacity:.6}
     </div>
   </div>
 </div>
+
+<!-- 利润断层工作台 · 整屏覆盖层。
+     目标是独立部署的外部站点（GitHub Pages），只做 iframe 嵌入，
+     不修改目标页任何内容，也不与日历共享任何状态。 -->
+<section id="gapShell" role="dialog" aria-modal="true" aria-labelledby="gapTitle" tabindex="-1">
+  <div class="gap-bar">
+    <span class="t" id="gapTitle">利润断层工作台<em>外部模块 · 独立部署</em></span>
+    <button type="button" class="gap-btn" id="gapReload">刷新</button>
+    <a class="gap-btn" id="gapNew" href="https://jasonling110-a11y.github.io/profit-gap/dashboard.html" target="_blank" rel="noopener noreferrer">新窗口</a>
+    <button type="button" class="gap-btn" id="gapClose">返回日历 (Esc)</button>
+  </div>
+  <div class="gap-stage">
+    <iframe id="gapFrame" title="利润断层工作台" referrerpolicy="no-referrer-when-downgrade"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"></iframe>
+    <div class="gap-ov" id="gapLoad"><div class="gap-spin"></div><span>正在加载利润断层工作台…</span></div>
+    <div class="gap-ov" id="gapFb" role="alert">
+      <h3>利润断层工作台加载失败</h3>
+      <p id="gapFbMsg"></p>
+      <div class="ops">
+        <button type="button" class="gap-btn" id="gapFbRetry">重试</button>
+        <a class="gap-btn" id="gapFbNew" href="https://jasonling110-a11y.github.io/profit-gap/dashboard.html" target="_blank" rel="noopener noreferrer">在新窗口打开</a>
+      </div>
+    </div>
+  </div>
+</section>
 
 <script>
 const HISTORY = (window.MC_HISTORY||{});
@@ -1341,6 +1421,128 @@ wbInit();
 
 renderGrid(); renderPanel();
 initCloud();   // 恢复登录态并拉取云端笔记；宿主不放行跨域时 CLOUD_CFG 为 null，直接返回
+/* ===== 利润断层工作台 · 整屏切换 =====
+   与日历完全解耦：只新增一层覆盖层，日历的 DOM / 状态 / 快捷键一行未动。
+   标签语义是 tab，所以首次打开后**不销毁 iframe**（切回来是瞬时的）；
+   内容过期由工具栏的「刷新」兜住。 */
+(function(){
+  var URL_GAP = "https://jasonling110-a11y.github.io/profit-gap/dashboard.html";
+  var TAB_CAL = document.getElementById("tabCal"),
+      TAB_GAP = document.getElementById("tabGap"),
+      SHELL   = document.getElementById("gapShell"),
+      FRAME   = document.getElementById("gapFrame"),
+      LOAD    = document.getElementById("gapLoad"),
+      FB      = document.getElementById("gapFb"),
+      FBMSG   = document.getElementById("gapFbMsg"),
+      BTN_NEW = document.getElementById("gapNew"),
+      BTN_FBN = document.getElementById("gapFbNew");
+  var timer = null, ready = false, err = "";
+
+  BTN_NEW.href = URL_GAP;
+  BTN_FBN.href = URL_GAP;
+
+  function isOpen(){ return SHELL.classList.contains("on"); }
+  function applyView(){
+    LOAD.classList.toggle("on", !ready && !err);
+    FB.classList.toggle("on", !!err);
+    if(err) FBMSG.textContent = err;
+  }
+  function setTab(isGap){
+    TAB_GAP.setAttribute("aria-selected", isGap ? "true" : "false");
+    TAB_CAL.setAttribute("aria-selected", isGap ? "false" : "true");
+  }
+  function startLoad(){
+    ready = false; err = "";
+    applyView();
+    FRAME.setAttribute("src", URL_GAP);
+    clearTimeout(timer);
+    timer = setTimeout(function(){
+      // 30 秒：目标看板是 1.3MB 的单文件（内嵌全量清单 + K 线），慢网络下 15 秒会误报。
+      // 这个超时是「软」的 —— 即便先弹了失败卡片，iframe 随后真加载成功时
+      // load 处理器会把状态翻回成功，卡片自动消失，不需要用户干预。
+      if(!ready){ err = "加载超时（30 秒）。目标页面较大或当前网络较慢 —— 可点「刷新」重试，或改用「新窗口」。"; applyView(); }
+    }, 30000);
+  }
+  function openFrame(){
+    SHELL.classList.add("on");
+    setTab(true);
+    if(!FRAME.getAttribute("src")) startLoad(); else applyView();
+    try{ history.replaceState(null, "", "#gap"); }catch(e){}
+    var c = document.getElementById("gapClose"); if(c) c.focus();
+  }
+  function closeFrame(){
+    SHELL.classList.remove("on");
+    setTab(false);
+    try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
+    TAB_GAP.focus();
+  }
+  // 暴露给自检脚本与手动调试
+  window.gapOpen = openFrame;
+  window.gapClose = closeFrame;
+  window.gapState = function(){ return { ready: ready, err: err, open: isOpen() }; };
+
+  TAB_GAP.addEventListener("click", openFrame);
+  TAB_CAL.addEventListener("click", closeFrame);
+  document.getElementById("gapClose").addEventListener("click", closeFrame);
+  document.getElementById("gapReload").addEventListener("click", startLoad);
+  document.getElementById("gapFbRetry").addEventListener("click", startLoad);
+
+  FRAME.addEventListener("load", function(){
+    // 读得到（about:blank，或被 X-Frame-Options 拒后的回落页）才是失败。别写反。
+    var blocked = false;
+    try{
+      // 三类情况必须分开，不能压成一个 try/catch：
+      //   a) 真跨域：contentWindow 拿得到（WindowProxy），只有读 .location 才抛 SecurityError
+      //      → 抛错本身就证明「确实加载出了别的东西」= 成功；
+      //   b) 加载彻底失败（断网 / 被拒后浏览器显示内置错误页）：contentWindow 可能为 null，
+      //      此时读 .location 抛的是 TypeError —— 若和 (a) 混在一起，失败就会被判成成功；
+      //   c) 可读但停在 about:blank：既没跨域也没内容 = 没真正加载出来。
+      var cw = FRAME.contentWindow;
+      if(!cw) blocked = true;
+      else {
+        var href = cw.location.href;
+        if(!href || href === "about:blank") blocked = true;
+      }
+    }catch(e2){ /* 跨域 = 正常 */ }
+    clearTimeout(timer);
+    if(blocked){ ready = false; err = "目标站点不允许被嵌入（X-Frame-Options / CSP 限制），请改用「新窗口」。"; }
+    else { ready = true; err = ""; }
+    applyView();
+  });
+  FRAME.addEventListener("error", function(){
+    clearTimeout(timer);
+    ready = false; err = "网络请求失败，无法连接目标站点。";
+    applyView();
+  });
+
+  // 日历的 ←/→/t 快捷键是 document 上的**冒泡**监听。覆盖层开着时不拦的话，
+  // 按方向键会在下面偷偷翻日历（用户完全看不见）。用捕获阶段先截住，
+  // 这样既修了问题，又不用去改既有的 keydown 那行代码。
+  document.addEventListener("keydown", function(e){
+    if(!isOpen()) return;
+    if(e.key === "Escape"){ closeFrame(); e.stopPropagation(); return; }
+    if(e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "t"){
+      e.stopPropagation(); e.preventDefault();
+    }
+  }, true);
+
+  // Tab 焦点锁在覆盖层内
+  SHELL.addEventListener("keydown", function(e){
+    if(e.key !== "Tab") return;
+    var f = SHELL.querySelectorAll("button, a[href], iframe");
+    if(!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+  });
+
+  window.addEventListener("hashchange", function(){
+    if(location.hash === "#gap"){ if(!isOpen()) openFrame(); }
+    else if(isOpen()) closeFrame();
+  });
+  // 深链：带 #gap 打开/刷新时直接停在利润断层（日历原本完全不用 hash，无冲突）
+  if(location.hash === "#gap") openFrame();
+})();
 document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')go(-1);if(e.key==='ArrowRight')go(1);if(e.key==='t')goToday()});
 </script>
 </body>

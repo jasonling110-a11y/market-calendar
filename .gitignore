@@ -32,5 +32,8 @@ tools/.pushplus.json
 # ---- 已废弃的输出目录（改用 docs/）----
 dist/
 
+# ---- 本机浏览器复测产物（截图，只给人眼看，不进仓库）----
+tools/out/
+
 # ---- 小程序私有配置 ----
 miniprogram/project.private.config.json
