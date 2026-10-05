@@ -9,7 +9,7 @@
      4) 跨域隔离真的成立（父子页读不到对方）
      5) 整条链路没有 JS 异常、没有对外部域名的失败请求
 
-   跑完在 tools/out/ 留两张截图（日历态 / 利润断层态）供人眼确认。
+   跑完在 tools/out/ 留三张截图（日历态 / 利润断层态 / 层内双页卡）供人眼确认。
    退出码 0 = 全过；1 = 有失败项；2 = 环境不可用（浏览器起不来），不算产品失败。
 
    ⚠️ 两个踩过的坑，改这个文件前先读：
@@ -125,8 +125,27 @@ function serve() {
   ok("iframe src 指向目标页",
      (await js("document.getElementById('gapFrame').getAttribute('src')")) === TARGET);
   ok("写入 #gap 深链", (await js("location.hash")) === "#gap");
-  ok("工具栏三个按钮都在",
-     await js("!!document.getElementById('gapReload') && !!document.getElementById('gapClose') && !!document.getElementById('gapNew')"));
+  ok("层内两个页卡都在，且「返回日历」按钮已移除",
+     await js("!!document.getElementById('gapTabGap') && !!document.getElementById('gapTabCal')" +
+              " && !document.getElementById('gapClose')"));
+  ok("工具栏按钮（刷新 / 新窗口）仍在",
+     await js("!!document.getElementById('gapReload') && !!document.getElementById('gapNew')"));
+
+  // 层内页卡必须真的可见、并排、且顶栏那组此刻是被盖住的 ——
+  // 否则「层内再放一对页卡」就成了冗余，而不是必需。
+  const gbox = await js("(function(){var g=document.getElementById('gapTabGap').getBoundingClientRect();" +
+                        "var c=document.getElementById('gapTabCal').getBoundingClientRect();" +
+                        "return {gx:Math.round(g.x),gw:Math.round(g.width),gh:Math.round(g.height)," +
+                        "cx:Math.round(c.x),cw:Math.round(c.width),cy:Math.round(c.y),gy:Math.round(g.y)};})()");
+  ok("层内页卡真实可见（非零尺寸）", gbox.gw > 30 && gbox.gh > 20 && gbox.cw > 30, JSON.stringify(gbox));
+  ok("两页卡并排（「日历」在「利润断层」右侧）", gbox.cx > gbox.gx, JSON.stringify(gbox));
+  ok("层内选中态正确（利润断层=true / 日历=false）",
+     (await js("document.getElementById('gapTabGap').getAttribute('aria-selected')")) === "true" &&
+     (await js("document.getElementById('gapTabCal').getAttribute('aria-selected')")) === "false");
+  ok("覆盖层确实盖住了顶栏那组页卡（层内这组是必需的，不是冗余）",
+     await js("(function(){var r=document.getElementById('tabCal').getBoundingClientRect();" +
+              "var el=document.elementFromPoint(r.x+r.width/2, r.y+r.height/2);" +
+              "return el ? !!el.closest('#gapShell') : false;})()"));
 
   // 跨境 + 1.3MB，沙箱带宽实测 ~46KB/s，给足 90 秒
   let st = null, waited = 0;
@@ -151,11 +170,28 @@ function serve() {
   await ab(["screenshot", shot2]);
   console.log("     截图 → " + path.relative(ROOT, shot2));
 
-  console.log("\n[D] 关闭 → 日历原样可用");
-  await ab(["click", "#gapClose"]);
+  console.log("\n[D] 层内双页卡：点「利润断层」不重载 / 点「日历」返回");
+  // 先记下 iframe 的 src 与就绪态：层内点「利润断层」必须是无副作用的
+  const srcKeep = await js("document.getElementById('gapFrame').getAttribute('src')");
+  await ab(["click", "#gapTabGap"]);
   await sleep(300);
-  ok("点「返回日历」→ 覆盖层收起",
+  ok("点层内「利润断层」→ 覆盖层仍然展开（它是页卡，不是关闭按钮）",
+     (await js("getComputedStyle(document.getElementById('gapShell')).display")) === "flex");
+  ok("点层内「利润断层」→ 不重载 iframe、也不回到转圈",
+     (await js("document.getElementById('gapFrame').getAttribute('src')")) === srcKeep &&
+     (await js("window.gapState().ready")) === true,
+     JSON.stringify(await js("window.gapState()")));
+  const shot3 = path.join(OUTDIR, "gap_3_tabs.png");
+  await ab(["screenshot", shot3]);
+  console.log("     截图 → " + path.relative(ROOT, shot3));
+
+  await ab(["click", "#gapTabCal"]);
+  await sleep(300);
+  ok("点层内「日历」页卡 → 覆盖层收起",
      (await js("getComputedStyle(document.getElementById('gapShell')).display")) === "none");
+  ok("经层内页卡返回后，两组页卡选中态都同步到「日历」",
+     (await js("document.getElementById('tabCal').getAttribute('aria-selected')")) === "true" &&
+     (await js("document.getElementById('gapTabCal').getAttribute('aria-selected')")) === "true");
   ok("关闭后清掉 #gap 深链", (await js("location.hash")) !== "#gap", await js("location.hash"));
   // 日历自己的分段控件（注意：它用 class 'on' 表示选中，不是 aria-selected）
   const m0 = await js("document.getElementById('mtitle').textContent");

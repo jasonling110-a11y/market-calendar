@@ -5,9 +5,10 @@
    可用 MC_HTML=<path> 指定其它副本（例如故意改坏一份，验证断言真的会失败）。
 
    覆盖：结构/语义、初始态、打开、加载判定的四类形态（跨域成功 / 可读 about:blank /
-        contentWindow 为 null / 网络 error）+ 15s 超时、重试与刷新、三种关闭方式、
-        快捷键不穿透（回归）、iframe 不销毁、hash 深链、与日历互不干扰、Tab 焦点锁、
-        三端产物一致。
+        contentWindow 为 null / 网络 error）+ 15s 超时、重试与刷新、
+        层内「利润断层 / 日历」双页卡（取代原先那个「返回日历」按钮）、
+        三种返回日历的方式、快捷键不穿透（回归）、iframe 不销毁、hash 深链、
+        与日历互不干扰、Tab 焦点锁、三端产物一致。
 
    注意 jsdom 与真实浏览器的一处差异（踩过一次坑）：
        在 jsdom 里给 iframe 设 src 后，contentWindow.location.href **直接就是那个 URL**，
@@ -106,8 +107,24 @@ console.log("[1] 结构与可用性");
   ok("覆盖层 aria-labelledby 指向标题元素",
      $(doc, "gapShell").getAttribute("aria-labelledby") === "gapTitle" && !!$(doc, "gapTitle"));
   ok("ifrframe 有 title（无障碍）", !!$(doc, "gapFrame").getAttribute("title"));
-  ok("工具栏按钮齐全（返回 / 刷新 / 新窗口）",
-     !!$(doc, "gapClose") && !!$(doc, "gapReload") && !!$(doc, "gapNew"));
+  ok("层内有两个对等页卡（利润断层 / 日历）",
+     !!$(doc, "gapTabGap") && !!$(doc, "gapTabCal") &&
+     $(doc, "gapTabGap").getAttribute("role") === "tab" &&
+     $(doc, "gapTabCal").getAttribute("role") === "tab");
+  ok("原来的「返回日历」按钮已移除（gapClose 不该再存在）", !$(doc, "gapClose"));
+  ok("两个页卡同属一个 .gap-tabs[role=tablist]，且与顶栏同一 aria-label",
+     (function () {
+       var a = $(doc, "gapTabGap").closest('[role="tablist"]'),
+           b = $(doc, "gapTabCal").closest('[role="tablist"]');
+       return !!a && a === b && a.classList.contains("gap-tabs") &&
+              a.getAttribute("aria-label") === "工作台切换";
+     })());
+  ok("页卡带 aria-controls 指向舞台（页卡语义完整）",
+     $(doc, "gapTabGap").getAttribute("aria-controls") === "gapStage" && !!$(doc, "gapStage"));
+  ok("「日历」页卡带 title 提示 Esc 仍然可用（原按钮上的 Esc 提示没丢干净）",
+     /Esc/.test($(doc, "gapTabCal").getAttribute("title") || ""));
+  ok("工具栏其余按钮齐全（刷新 / 新窗口）",
+     !!$(doc, "gapReload") && !!$(doc, "gapNew"));
   ok("加载态与失败兜底齐全", !!$(doc, "gapLoad") && !!$(doc, "gapFb") &&
      !!$(doc, "gapFbMsg") && !!$(doc, "gapFbRetry") && !!$(doc, "gapFbNew"));
   ok("失败兜底 role=alert（读屏可感知）", $(doc, "gapFb").getAttribute("role") === "alert");
@@ -146,8 +163,11 @@ console.log("\n[2] 初始状态与打开");
   ok("显示加载态", $(doc, "gapLoad").classList.contains("on"));
   ok("未显示失败卡片", !$(doc, "gapFb").classList.contains("on"));
   ok("写入 #gap 深链", w.location.hash === "#gap", w.location.hash);
-  ok("焦点移到「返回日历」（键盘用户不至于迷失）",
-     doc.activeElement === $(doc, "gapClose"), doc.activeElement && doc.activeElement.id);
+  ok("层内页卡选中态正确（利润断层选中、日历未选中）",
+     $(doc, "gapTabGap").getAttribute("aria-selected") === "true" &&
+     $(doc, "gapTabCal").getAttribute("aria-selected") === "false");
+  ok("焦点移到层内「利润断层」页卡（键盘用户不至于迷失）",
+     doc.activeElement === $(doc, "gapTabGap"), doc.activeElement && doc.activeElement.id);
 }
 
 /* ================= 3. 加载成功的判定（跨域即成功） ================= */
@@ -228,29 +248,81 @@ console.log("\n[3] 加载判定分支");
      JSON.stringify(g.window.gapState()));
 }
 
-/* ================= 4. 关闭的三种方式 ================= */
-console.log("\n[4] 关闭方式");
+/* ================= 4. 层内双页卡 + 返回日历的三种方式 ================= */
+console.log("\n[4] 层内双页卡与返回日历");
 {
+  // 4a. 层内「利润断层」= 当前页，点它必须无副作用：不关层、不重载、不重启超时。
+  //     这是「对等页卡」和「关闭按钮」最容易写出差异的地方。
+  const z = boot();
+  click(z.window, $(z.doc, "tabGap"));
+  asCrossOrigin($(z.doc, "gapFrame"));
+  fire(z.window, $(z.doc, "gapFrame"), "load");            // 先让它加载完成
+  /* ⚠️ 必须先把这个「读 contentWindow 就抛错」的替身撤掉再点页卡。
+     否则一旦产品代码在点击时重设 src，jsdom 内部的 iframe loadFrame 会去读
+     contentWindow → 撞上这个 getter 抛错 → setAttribute 自己就炸了，
+     于是 startLoad() 里排在后面的 setTimeout 根本执行不到 ——
+     「不重启超时」那条断言会变成**永远不会失败**的假断言（实测负向测试里它照样打 ✔）。
+     撤掉之后 jsdom 走真实路径，重设 src 会照常注册新的超时，断言才有意义。 */
+  restoreRealWindow($(z.doc, "gapFrame"));
+  const srcBefore = $(z.doc, "gapFrame").getAttribute("src");
+  const timersBefore = z.timers.length;
+  if (z.doc.activeElement && z.doc.activeElement.blur) z.doc.activeElement.blur();
+  click(z.window, $(z.doc, "gapTabGap"));
+  ok("点层内「利润断层」不会把覆盖层关掉", $(z.doc, "gapShell").classList.contains("on"));
+  ok("点层内「利润断层」不重载 iframe（src 不变、没回到加载态）",
+     $(z.doc, "gapFrame").getAttribute("src") === srcBefore &&
+     !$(z.doc, "gapLoad").classList.contains("on") &&
+     !$(z.doc, "gapFb").classList.contains("on"));
+  ok("点层内「利润断层」不重启 30 秒超时兜底",
+     z.timers.length === timersBefore, "timers " + timersBefore + " → " + z.timers.length);
+  ok("点层内「利润断层」后焦点回到该页卡",
+     z.doc.activeElement === $(z.doc, "gapTabGap"), z.doc.activeElement && z.doc.activeElement.id);
+  ok("层内选中态保持（利润断层=true / 日历=false）",
+     $(z.doc, "gapTabGap").getAttribute("aria-selected") === "true" &&
+     $(z.doc, "gapTabCal").getAttribute("aria-selected") === "false");
+
+  // 4b. 三种返回日历的方式
   const a = boot();
   click(a.window, $(a.doc, "tabGap"));
   keydown(a.window, a.doc, "Escape");
-  ok("Esc 可关闭", !$(a.doc, "gapShell").classList.contains("on"));
-  ok("关闭后选中态回到「市场日历」",
+  ok("① Esc 可返回日历", !$(a.doc, "gapShell").classList.contains("on"));
+  ok("Esc 返回后顶栏选中态回到「市场日历」",
      $(a.doc, "tabCal").getAttribute("aria-selected") === "true");
-  ok("关闭后清掉 #gap 深链", a.window.location.hash !== "#gap", a.window.location.hash);
-  ok("关闭后焦点回到「利润断层」标签（键盘可继续操作）",
+  ok("Esc 返回后清掉 #gap 深链", a.window.location.hash !== "#gap", a.window.location.hash);
+  ok("Esc 返回后焦点回到顶栏「利润断层」标签（键盘可继续操作）",
      a.doc.activeElement === $(a.doc, "tabGap"));
 
   const b = boot();
   click(b.window, $(b.doc, "tabGap"));
-  click(b.window, $(b.doc, "gapClose"));
-  ok("点「返回日历」可关闭", !$(b.doc, "gapShell").classList.contains("on"));
+  click(b.window, $(b.doc, "gapTabCal"));
+  ok("② 点层内「日历」页卡可返回日历", !$(b.doc, "gapShell").classList.contains("on"));
+  ok("经层内页卡返回后，两组页卡选中态都同步到「日历」",
+     $(b.doc, "tabCal").getAttribute("aria-selected") === "true" &&
+     $(b.doc, "tabGap").getAttribute("aria-selected") === "false" &&
+     $(b.doc, "gapTabCal").getAttribute("aria-selected") === "true" &&
+     $(b.doc, "gapTabGap").getAttribute("aria-selected") === "false");
 
   const c = boot();
   click(c.window, $(c.doc, "tabGap"));
   click(c.window, $(c.doc, "tabCal"));
-  ok("点「市场日历」标签可关闭", !$(c.doc, "gapShell").classList.contains("on"));
-  ok("点标签关闭后选中态正确", $(c.doc, "tabCal").getAttribute("aria-selected") === "true");
+  ok("③ 点顶栏「市场日历」标签可返回日历", !$(c.doc, "gapShell").classList.contains("on"));
+  ok("点顶栏标签返回后选中态正确", $(c.doc, "tabCal").getAttribute("aria-selected") === "true");
+
+  // 4c. 经层内页卡往返一轮，iframe 必须还在（tab 语义：切走不销毁）
+  const d = boot();
+  click(d.window, $(d.doc, "tabGap"));
+  asCrossOrigin($(d.doc, "gapFrame"));
+  fire(d.window, $(d.doc, "gapFrame"), "load");
+  restoreRealWindow($(d.doc, "gapFrame"));   // 同上：不撤掉的话重设 src 会抛错，掩盖真实行为
+  const s0 = $(d.doc, "gapFrame").getAttribute("src");
+  const t0 = d.timers.length;
+  click(d.window, $(d.doc, "gapTabCal"));
+  click(d.window, $(d.doc, "gapTabGap"));
+  ok("经层内页卡往返一轮后覆盖层重开、iframe 不重载",
+     $(d.doc, "gapShell").classList.contains("on") &&
+     $(d.doc, "gapFrame").getAttribute("src") === s0 &&
+     d.timers.length === t0,
+     "timers " + t0 + " → " + d.timers.length);
 }
 
 /* ================= 5. 快捷键不穿透（本轮最重要的回归） ================= */
@@ -341,7 +413,8 @@ console.log("\n[8] Tab 焦点锁");
 {
   const { window: w, doc } = boot();
   click(w, $(doc, "tabGap"));
-  const first = $(doc, "gapReload"), last = $(doc, "gapFbNew");
+  // 覆盖层内第一个可聚焦元素现在是「利润断层」页卡（工具栏最左），不再是「刷新」。
+  const first = $(doc, "gapTabGap"), last = $(doc, "gapFbNew");
   last.focus();
   keydown(w, $(doc, "gapShell"), "Tab");
   ok("在最后一个可聚焦元素按 Tab → 回到第一个（焦点不逃出覆盖层）",
@@ -350,6 +423,11 @@ console.log("\n[8] Tab 焦点锁");
   keydown(w, $(doc, "gapShell"), "Tab", true);
   ok("在第一个可聚焦元素按 Shift+Tab → 跳到最后一个",
      doc.activeElement === last, doc.activeElement && doc.activeElement.id);
+  // 两个页卡都在焦点环内（否则键盘用户切不回去）
+  const focusables = $(doc, "gapShell").querySelectorAll("button, a[href], iframe");
+  const ids = Array.prototype.map.call(focusables, function (el) { return el.id; });
+  ok("层内两个页卡都在焦点环内",
+     ids.indexOf("gapTabGap") >= 0 && ids.indexOf("gapTabCal") >= 0, ids.join(","));
 }
 
 /* ================= 9. 三端产物一致 ================= */
