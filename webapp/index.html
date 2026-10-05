@@ -380,7 +380,10 @@ a.ct-it:active{opacity:.6}
 
 /* ===== 利润断层工作台（外部模块 · 整屏覆盖层）=====
    顶栏标签刻意沿用 .seg/.seg-i 的观感（surface2 底 + #3a3a3c 选中），
-   让「切工作台」和「历史回顾/未来预告」看起来是同一套交互。 */
+   让「切工作台」和「历史回顾/未来预告」看起来是同一套交互。
+   工具栏里那对 .gap-tab 与顶栏 .apptab 是同一套观感，同样刻意对齐：
+   覆盖层是整屏的，会把顶栏那组标签整个盖住，所以层内必须自带一对等价页卡，
+   用户才能在里面自由切换 —— 而不是只留一个「返回日历」的单项按钮。 */
 .apptabs{display:flex;background:var(--surface2);border-radius:10px;padding:3px;flex-shrink:0}
 .apptab{appearance:none;-webkit-appearance:none;border:0;background:transparent;color:var(--text2);
   font-family:inherit;font-size:13px;line-height:1;height:32px;padding:0 14px;border-radius:8px;cursor:pointer;
@@ -390,6 +393,18 @@ a.ct-it:active{opacity:.6}
 .apptab:focus-visible{outline:2px solid var(--info);outline-offset:2px}
 .apptab .ad{width:6px;height:6px;border-radius:50%;background:var(--text3)}
 .apptab[aria-selected="true"] .ad{background:var(--accent)}
+
+/* 覆盖层内的两个页卡（利润断层 / 日历）。与 .apptabs 完全同构，
+   两个页卡是对等的，没有哪一个长得像「关闭按钮」。 */
+.gap-tabs{display:flex;background:var(--surface2);border-radius:10px;padding:3px;flex-shrink:0}
+.gap-tab{appearance:none;-webkit-appearance:none;border:0;background:transparent;color:var(--text2);
+  font-family:inherit;font-size:13px;line-height:1;height:32px;padding:0 14px;border-radius:8px;cursor:pointer;
+  display:flex;align-items:center;gap:7px;white-space:nowrap;transition:.18s}
+.gap-tab:hover{color:var(--text)}
+.gap-tab[aria-selected="true"]{background:#3a3a3c;color:var(--text);font-weight:500}
+.gap-tab:focus-visible{outline:2px solid var(--info);outline-offset:2px}
+.gap-tab .ad{width:6px;height:6px;border-radius:50%;background:var(--text3)}
+.gap-tab[aria-selected="true"] .ad{background:var(--accent)}
 
 /* z-index 必须高于 .sheet(20)，否则「笔记」面板会盖在覆盖层上面。
    这一层挂在 <body> 下（.app 的兄弟节点），刻意不做 .app 的子节点 ——
@@ -418,12 +433,12 @@ a.ct-it:active{opacity:.6}
   animation:gapspin .8s linear infinite}
 @keyframes gapspin{to{transform:rotate(360deg)}}
 @media (max-width:900px){
-  .apptab{padding:0 11px;font-size:12.5px}
+  .apptab,.gap-tab{padding:0 11px;font-size:12.5px}
   .gap-bar{padding:var(--st) 12px 0;gap:8px}
   .gap-bar .t em{display:none}
 }
 @media (prefers-reduced-motion:reduce){
-  .apptab,.gap-btn{transition:none}
+  .apptab,.gap-tab,.gap-btn{transition:none}
   .gap-spin{animation-duration:3s}
 }
 </style>
@@ -553,12 +568,18 @@ a.ct-it:active{opacity:.6}
      不修改目标页任何内容，也不与日历共享任何状态。 -->
 <section id="gapShell" role="dialog" aria-modal="true" aria-labelledby="gapTitle" tabindex="-1">
   <div class="gap-bar">
+    <!-- 层内两个页卡：与顶栏那组等价。覆盖层是整屏的、会把顶栏整组盖住，
+         所以这一对才是用户在层内看得见的切换入口 —— 不再保留单独的「返回日历」按钮，
+         否则「日历」这件事就变成了一个单向的关闭动作，而不是一个对等的页卡。 -->
+    <div class="gap-tabs" role="tablist" aria-label="工作台切换">
+      <button type="button" class="gap-tab" id="gapTabGap" role="tab" aria-selected="true" aria-controls="gapStage"><span class="ad"></span>利润断层</button>
+      <button type="button" class="gap-tab" id="gapTabCal" role="tab" aria-selected="false" title="切回市场日历（按 Esc 同样可以）"><span class="ad"></span>日历</button>
+    </div>
     <span class="t" id="gapTitle">利润断层工作台<em>外部模块 · 独立部署</em></span>
     <button type="button" class="gap-btn" id="gapReload">刷新</button>
     <a class="gap-btn" id="gapNew" href="https://jasonling110-a11y.github.io/profit-gap/dashboard.html" target="_blank" rel="noopener noreferrer">新窗口</a>
-    <button type="button" class="gap-btn" id="gapClose">返回日历 (Esc)</button>
   </div>
-  <div class="gap-stage">
+  <div class="gap-stage" id="gapStage">
     <iframe id="gapFrame" title="利润断层工作台" referrerpolicy="no-referrer-when-downgrade"
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"></iframe>
     <div class="gap-ov" id="gapLoad"><div class="gap-spin"></div><span>正在加载利润断层工作台…</span></div>
@@ -1424,11 +1445,18 @@ initCloud();   // 恢复登录态并拉取云端笔记；宿主不放行跨域�
 /* ===== 利润断层工作台 · 整屏切换 =====
    与日历完全解耦：只新增一层覆盖层，日历的 DOM / 状态 / 快捷键一行未动。
    标签语义是 tab，所以首次打开后**不销毁 iframe**（切回来是瞬时的）；
-   内容过期由工具栏的「刷新」兜住。 */
+   内容过期由工具栏的「刷新」兜住。
+
+   有两组等价的页卡，必须由 setTab() 一起同步：
+     · 顶栏 #tabCal / #tabGap —— 日历界面里的入口；
+     · 层内 #gapTabCal / #gapTabGap —— 覆盖层整屏，会把顶栏整组盖住，
+       所以层内必须自带一对，用户才能在层内「自由切换」而不是只能单向退出。 */
 (function(){
   var URL_GAP = "https://jasonling110-a11y.github.io/profit-gap/dashboard.html";
   var TAB_CAL = document.getElementById("tabCal"),
       TAB_GAP = document.getElementById("tabGap"),
+      TAB_CAL_IN = document.getElementById("gapTabCal"),
+      TAB_GAP_IN = document.getElementById("gapTabGap"),
       SHELL   = document.getElementById("gapShell"),
       FRAME   = document.getElementById("gapFrame"),
       LOAD    = document.getElementById("gapLoad"),
@@ -1450,6 +1478,9 @@ initCloud();   // 恢复登录态并拉取云端笔记；宿主不放行跨域�
   function setTab(isGap){
     TAB_GAP.setAttribute("aria-selected", isGap ? "true" : "false");
     TAB_CAL.setAttribute("aria-selected", isGap ? "false" : "true");
+    // 层内那对与顶栏同源同值。它不可见时也保持正确，省得下次打开先闪一下旧选中态。
+    TAB_GAP_IN.setAttribute("aria-selected", isGap ? "true" : "false");
+    TAB_CAL_IN.setAttribute("aria-selected", isGap ? "false" : "true");
   }
   function startLoad(){
     ready = false; err = "";
@@ -1468,7 +1499,9 @@ initCloud();   // 恢复登录态并拉取云端笔记；宿主不放行跨域�
     setTab(true);
     if(!FRAME.getAttribute("src")) startLoad(); else applyView();
     try{ history.replaceState(null, "", "#gap"); }catch(e){}
-    var c = document.getElementById("gapClose"); if(c) c.focus();
+    // 焦点落在「当前页卡」上：键盘用户进来后 Tab 一圈就是刷新/新窗口，
+    // 想切走也只要在层内按一次 Shift+Tab（那两个页卡是同一个 tablist）。
+    TAB_GAP_IN.focus();
   }
   function closeFrame(){
     SHELL.classList.remove("on");
@@ -1483,7 +1516,11 @@ initCloud();   // 恢复登录态并拉取云端笔记；宿主不放行跨域�
 
   TAB_GAP.addEventListener("click", openFrame);
   TAB_CAL.addEventListener("click", closeFrame);
-  document.getElementById("gapClose").addEventListener("click", closeFrame);
+  // 层内两个页卡：与顶栏那对绑的是同一组函数。
+  // openFrame() 是幂等的（src 已存在就走 applyView，不会重载 iframe、也不会重启 30 秒超时），
+  // 所以点「利润断层」不会把自己刷新掉。
+  TAB_GAP_IN.addEventListener("click", openFrame);
+  TAB_CAL_IN.addEventListener("click", closeFrame);
   document.getElementById("gapReload").addEventListener("click", startLoad);
   document.getElementById("gapFbRetry").addEventListener("click", startLoad);
 
