@@ -1,0 +1,42 @@
+# 市场日历 · 项目长期约定
+
+> 发布/构建的**完整操作手册**在用户级技能 `market-calendar-release`（含踩坑与验证脚本）。
+> 这里只记最容易记错、且每次都会用到的几条。
+
+## 构建（唯一 UI 源头 = `tools/build_preview.py`）
+```bash
+PY=/Users/jason/.workbuddy/binaries/python/versions/3.13.12/bin/python3
+$PY tools/build_preview.py          # → preview/index.html（数据内嵌）
+$PY tools/build_preview.py --cloud  # → webapp/index.html（运行时取数 + 云笔记）
+$PY tools/build_ics.py              # → docs/app.html + docs/market-calendar.ics + docs/index.html
+```
+改一处，三端（本机工作台 / GitHub Pages / 云端应用）同时变。
+
+## 🚨 发布铁律（2026-10-05 实测确认）
+- **push 不会重跑数据管线。** push 只触发 GitHub 内置的 `pages build and deployment`
+  （`event=dynamic`，只把当前 tree 重新发布到 Pages，不回推 commit）。
+  `daily.yml`（`每日更新市场日历`）**只在 21:00 cron 与 `workflow_dispatch` 上跑**。
+- 所以**改完源码后必须显式 dispatch `daily.yml`**（或本地重建后自己推产物），
+  否则 Pages 重新发布的仍是**仓库里的旧产物**。
+- 判 `runs` 一定要看 **`name`**，别看 `event`、也别看 `run_number`（不同 workflow 各自编号）。
+- **`git push` 在本机永久不可用**（无凭据 + 本地/远端是长期平行的双历史）→
+  数据与源码一律走 `$PY tools/push_via_api.py`（token 在 `~/.market-calendar.github.json`）。
+- `webapp/index.html` 不在 `daily.yml` 的 `git add` 里 → 云端那份只能靠 `workbuddy_sites_deploy`
+  单独发布（**须先征得用户同意**）。
+- 收敛判据 = **全量逐字节比对 92 个 tracked 文件为 0 差异**，不是 `--dry`。
+  注意本地 `tools/data/*.json` 常比远端旧（远端 21:00 定时任务更新），此时**不要**推产物。
+
+## 利润断层栏（易改错）
+- 有**两组等价页卡**，`aria-selected` 由同一个 `setTab()` 同步：
+  顶栏 `#tabCal`/`#tabGap`，覆盖层内 `#gapTabCal`/`#gapTabGap`。
+- 层内那对是**必需**的：覆盖层整屏（z-index 60）会把顶栏整组盖住。
+- **不要再加回 `#gapClose`**（2026-10-05 按用户要求删掉的「返回日历」按钮），自检有反向断言。
+- 改它要跑两个自检 + 负向测试：`tools/check_profitgap_tab.js`（86 项）、
+  `tools/browser_check_profitgap.js`（40 项，真实浏览器）、`git diff --numstat` 复核改动范围。
+
+## 时区
+所有时间戳一律**显式东八区**。本机 CST / Actions UTC 差 8 小时，`date.today()` 甚至会差一天。
+
+## 数据源
+B 站视频要点**只有本机能做**（whisper 转写 + 读语义提炼），Actions 没有 yt-dlp/whisper。
+本机跑完必须把 `tools/data/up_summary.json` + `up_raw.json` 推上去，否则云端日历留空窗。

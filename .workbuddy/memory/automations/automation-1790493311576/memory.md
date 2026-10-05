@@ -9,15 +9,19 @@
 - 结果：远程 main → 24c8b278；全量比对**92/92 tracked 文件与本地逐字节一致**；线上 Pages version=202610042135、up_videos=21 / up_days=17（已核实）。
 - 今日/明日安排：10-04（假期）2 项提示级；10-05 共 11 条，最高级别为 22:00 美国 ISM 服务业 PMI。
 
-## ⚠️ 新发现：每次 push 都会触发云端 Actions（关键，务必记住）
-- `.github/workflows/daily.yml` 只有 `schedule`(21:00) 与 `workflow_dispatch`，**但实际事件类型是 `dynamic`**：
-  实测**每一次 git push（含 API 通道）都会立刻触发一次云端 workflow run**，它会重跑整条管线并 `git add docs miniprogram/data tools/data preview` 后回推。
-- 后果：本机推送与云端 run **互相赛跑**，`push_via_api.py --dry` 的差异清单会**反复回涨**
-  （本次推完一批，下一批又冒出新文件；同一文件推成功后再次出现差异）。
-  → 这不是脚本 bug，不要怀疑哈希逻辑；**必须反复「推送 + 全量比对」直到差异为 0**，并等最后一次 run 结束再收尾。
-- 判别收敛的正确姿势（本次用它确认 0 差异）：拉远程 tree，对每个 `git ls-files` 文件比 `git hash-object`，
-  逐字节全等即收敛。`--dry` 只作快速指示，**不作为最终判据**。
-- 云端 run 若判定无变化会 `跳过提交`，此时 remote HEAD 保持为本机最后推的 sha（本次 24c8b278），属正常。
+## ⚠️ 订正（2026-10-05 复核，10-04 的结论是错的）
+- **那条「每次 push 都触发云端 run、云端重跑管线并回推」是误判。** 复核 `runs[].name` 后确认：
+  `event=dynamic` 的 run 全是 **`pages build and deployment`** —— GitHub **内置**的 Pages 发布流程，
+  只把当前 tree 重新发布到 Pages，**不重跑数据管线、也不回推任何 commit**。
+- `daily.yml`（`每日更新市场日历`）**只在 `schedule`(21:00) 与 `workflow_dispatch` 上触发**。
+- 10-04 那天 `--dry` 回涨的真凶是**定时任务同时在跑**（21:00 的 cron 当天拖到 21:30 之后落地），
+  它用自己抓的新数据重建产物并提交 → 覆盖刚推的产物。等它跑完再推即收敛。
+- 🚨 **更重要的推论：只推源码不会让线上产物更新。** 因为 push 不触发 `daily.yml`，
+  改完 `build_preview.py` 之类源码后，Pages 重新发布的**仍是仓库里的旧产物**
+  （2026-10-05 实测：只推 `build_preview.py` 后线上 `app.html` 里 `grep -c 'id="gapTabCal"'` = 0）。
+  → 必须**显式 dispatch `daily.yml`**（204 = 成功）让它重建，或本地重建后自己推产物。
+  另：`webapp/index.html` 不在 `daily.yml` 的 `git add` 里，任何情况下都要单独推/单独发布。
+- 收尾判据不变：**全量逐字节比对**（92 个 tracked 文件），打印 0 差异才算收敛；`--dry` 只作参考。
 
 ## 执行摘要（历史：2026-10-03）
 - 流程：daily_update.sh → 读转写提炼要点 → 写 up_summary.json → 三重建 → 推送 GitHub → rsync 桌面。
