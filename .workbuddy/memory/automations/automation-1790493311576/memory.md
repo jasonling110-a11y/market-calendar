@@ -1,6 +1,24 @@
 # 自动化 memory — 市场日历每日更新（automation-1790493311576）
 
-## 执行摘要（最新：2026-10-06 · 非数据更新，纯答疑）
+## 执行摘要（最新：2026-10-06 · 全流程完成）
+- 新增 **1 个视频要点**：`BV1xpHZ6FE5E` 2026-10-06「10.6 面对他们加速吸收、收紧流动性…」13 条
+  → 要点库 22 → **23 条**，覆盖 19 天。
+- 🚨 **陷阱复现（务必记住）**：`fetch_bilibili.py` 打印「没有新视频，无需处理」，
+  但 `summarize_up.py` 照样把 10-06 视频以 `auto:true` 兜底塞进 `up_summary.json` ⇒
+  `up_pending.py` 报「无待办」。**待办真正来源 = `up_summary.json` 里 `auto==True` 的条目**
+  （本次即 BV1xpHZ6FE5E）+ `up_raw` 里有转写但不在 summary 的 bvid。别再只信 up_pending。
+- 抓取：**未出现**「本次未抓到，沿用上次数据」。板块 3 天 / 宏观 79 指标（成功 54、失败 0）/
+  日历 16348 → 7359 条。
+- 推送：`git push` 仍 `non-fast-forward` 被拒（本地与远端长期双历史）→ 走 `tools/push_via_api.py`，
+  17 文件 / 7.99 MB **一次全成功**，main → `05069cbc`；复查 `--dry` = 无待推改动（收敛）。
+- 线上已验证：meta `version=202610062136`、`up_videos=23 / up_days=19`；`app.html` 含新视频标题。
+- 微信推送：无 PushPlus token → 未发送（预期内）。
+- 桌面 rsync：成功，副本含 23 条要点。
+- 今日/明日安排：10-06 共 7 条（最高 ★★★ 20:30 美国贸易差额:季调）；
+  10-07 共 14 条（最高 ★★★ 16:00 央行外汇储备）。
+- 遗留：`webapp/index.html` 已在仓库，但**云端应用需单独发布**（workbuddy_sites_deploy，须先征得用户同意）——仍未执行。
+
+## 执行摘要（历史：2026-10-06 · 非数据更新，纯答疑）
 - 用户问「注册账号 / 手机⇄电脑同步是不是还没做」。本次**未跑数据管线**，只做代码+后端核查并作答。
 - 结论：**网页端做了且已跑通；小程序端没账号体系；GitHub Pages 是设计上主动关闭。**
   证据：`build_preview.py` 有 `#loginSheet`(密码/验证码/注册 三 tab)+`cloudBtn`+`doSignOut`/`cloudPull`/`cloudPushAll`；
