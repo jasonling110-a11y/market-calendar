@@ -393,6 +393,11 @@ a.ct-it:active{opacity:.6}
 .apptab:focus-visible{outline:2px solid var(--info);outline-offset:2px}
 .apptab .ad{width:6px;height:6px;border-radius:50%;background:var(--text3)}
 .apptab[aria-selected="true"] .ad{background:var(--accent)}
+/* 2026-10-06 用户要求：被嵌进别的页面（「个人投资工作台」聚合页）时，顶栏整行隐藏 ——
+   父页面已有自己的三个页卡，这里再摆一遍「市场日历/利润断层」纯属重复，还把品牌名重复了两遍。
+   html.embedded 由 </head> 前的内联脚本判断（window.self !== window.top，跨源也判得准）。
+   独立打开（本机工作台 / Pages / 云端直开）不受影响，模块切换功能原样保留。 */
+html.embedded .topbar{display:none}
 
 /* 覆盖层内的两个页卡（利润断层 / 日历）。与 .apptabs 完全同构，
    两个页卡是对等的，没有哪一个长得像「关闭按钮」。 */
@@ -443,6 +448,10 @@ a.ct-it:active{opacity:.6}
 }
 </style>
 
+<script>/* 2026-10-06 用户要求：被别的页面 iframe 嵌入时隐藏顶栏（品牌 + 工作台切换页卡）。
+   必须放在 </head> 前 —— head 里的同步脚本先于首次渲染执行，避免顶栏闪一下再消失。
+   window.self !== window.top 的比较跨源也允许，包 try/catch 只是防极端环境。 */
+try{if(window.self!==window.top)document.documentElement.classList.add("embedded");}catch(e){}</script>
 </head>
 <body>
 <div class="app">
