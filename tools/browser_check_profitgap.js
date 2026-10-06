@@ -61,6 +61,22 @@ function ab(args) {
 }
 const js = async (expr) => JSON.parse((await ab(["eval", expr])).trim());   // eval 回的是 JSON 字面量
 
+/* 等页面真的换过来再断言。
+   ⚠️ 踩过的坑：agent-browser 的 open 会**新开一个标签页**，旧页的收起是异步的。
+   在这几百毫秒的窗口里，eval 有可能落到一个还没被换掉的 about:blank 上 ——
+   症状是「上一条断言明明刚通过（说明页面是对的），下一条 eval 却报
+   TypeError: Cannot read properties of null」。这是宿主竞态，不是产品问题，
+   所以固定 sleep 不可靠（页面大小变一点点就会翻车），必须显式等到目标 DOM 出现。
+   注意：这里只等「页面身份」，不预设任何断言为真 —— 断言本身一律不改。 */
+async function waitFor(expr, ms) {
+  const t0 = Date.now();
+  for (;;) {
+    try { if (await js(expr)) return true; } catch (e) { /* 还在 about:blank / 解析中 */ }
+    if (Date.now() - t0 > (ms || 8000)) return false;
+    await sleep(250);
+  }
+}
+
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8",
   ".ics": "text/calendar; charset=utf-8", ".svg": "image/svg+xml" };
@@ -92,6 +108,7 @@ function serve() {
   // 浏览器这会儿才真的起来，清一遍累积的日志
   try { await ab(["network", "requests", "--clear"]); } catch (e) {}
   try { await ab(["errors", "--clear"]); } catch (e) {}
+  await waitFor("!!document.getElementById('grid')");
 
   ok("页面打开成功", /市场日历/.test(out), out.trim().split("\n")[0]);
   ok("标题为「市场日历 · 预览」", /市场日历/.test(await js("document.title")), await js("document.title"));
@@ -225,13 +242,44 @@ function serve() {
      (await js("getComputedStyle(document.getElementById('gapShell')).display")) === "none");
 
   console.log("\n[F] 深链 #gap 直接进入");
-  await ab(["open", base + "/preview/index.html#gap"]);
-  await sleep(1000);
+  // ⚠️ 必须用「带标签的新标签页」，不能直接在原标签上 open 一个 #gap 的地址。
+  //    踩过的坑：原标签上再 open 同路径仅 hash 不同的 URL 时，agent-browser 的 eval
+  //    会时不时绑在一个残留的 about:blank 执行上下文上 —— 症状是
+  //      · `tab` 明明显示标签页停在 .../preview/index.html#gap
+  //      · 但 eval 里 location.href === "about:blank"、document.title === ""、
+  //        body.innerHTML.length === 0
+  //    于是 ok() 前的 getComputedStyle(null) 直接抛错，整条复测链断掉（退出码 2）。
+  //    这是宿主的目标/上下文绑定不稳定，跟被测页面无关；用显式 label 建页并切过去即可钉死目标。
+  //    顺带好处：这是一次真正的「全新加载 + 深链」，正是用户点链接的真实场景。
+  await ab(["tab", "new", "--label", "deeplink", base + "/preview/index.html#gap"]);
+  await sleep(900);
+  await ab(["tab", "deeplink"]);
+  await waitFor("!!document.getElementById('gapFrame')");   // 见 waitFor 注释：别在 about:blank 上断言
+  await sleep(400);
   ok("带 #gap 打开时直接停在利润断层",
      (await js("getComputedStyle(document.getElementById('gapShell')).display")) === "flex" &&
      (await js("document.getElementById('tabGap').getAttribute('aria-selected')")) === "true");
   ok("深链进入时也已设置 iframe src",
      (await js("document.getElementById('gapFrame').getAttribute('src')")) === TARGET);
+
+  // 页面里另有一条 hashchange 监听（与「初次加载就带 #gap」是两条不同的代码路径），
+  // 在同一文档内改 hash 也必须生效 —— 否则从外部点一个 #gap 链接进来就不灵。
+  await ab(["eval", "(function(){location.hash='#__other';return 0})()"]);
+  await sleep(400);
+  ok("同文档内 hash 离开 #gap → 覆盖层收起",
+     (await js("getComputedStyle(document.getElementById('gapShell')).display")) === "none");
+  // 先手动收起再改 hash，才能真的验到「hash 事件把层打开」。
+  // 不做这一步的话，上一条万一失败（层还开着），这条会因为「本来就开着」而被判通过 ——
+  // 那就是一条永远不会失败的假断言。
+  await ab(["eval", "(function(){window.gapClose();return 0})()"]);
+  await sleep(300);
+  ok("前置：已手动收起覆盖层",
+     (await js("getComputedStyle(document.getElementById('gapShell')).display")) === "none");
+  await ab(["eval", "(function(){location.hash='#gap';return 0})()"]);
+  await sleep(400);
+  ok("同文档内 hash 回到 #gap → 覆盖层重新打开",
+     (await js("getComputedStyle(document.getElementById('gapShell')).display")) === "flex" &&
+     (await js("document.getElementById('gapTabGap').getAttribute('aria-selected')")) === "true");
 
   console.log("\n[G] 异常与网络");
   const errs = (await ab(["errors"])).trim();

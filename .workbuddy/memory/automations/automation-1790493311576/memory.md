@@ -1,6 +1,17 @@
 # 自动化 memory — 市场日历每日更新（automation-1790493311576）
 
-## 执行摘要（最新：2026-10-04）
+## 执行摘要（最新：2026-10-06 · 非数据更新，纯答疑）
+- 用户问「注册账号 / 手机⇄电脑同步是不是还没做」。本次**未跑数据管线**，只做代码+后端核查并作答。
+- 结论：**网页端做了且已跑通；小程序端没账号体系；GitHub Pages 是设计上主动关闭。**
+  证据：`build_preview.py` 有 `#loginSheet`(密码/验证码/注册 三 tab)+`cloudBtn`+`doSignOut`/`cloudPull`/`cloudPushAll`；
+  云后端表 `mc_notes` RLS 开启；已有账号 `jasonling_tt@163.com`(2026-10-01 注册)；
+  `cloudAllowed()` 只放行 localhost/127.0.0.1/[::1] 与 `*.workbuddy.host`，github.io 一律 false；
+  `miniprogram/app.js` 是 `cloudEnv:''`+`useCloud:false`，全仓无 `signIn/signUp/手机号登录`；
+  `#loginSheet` 那句「微信/手机号登录仅小程序可用」= 空承诺（真 bug）。
+- 无产物文件产生 → 未调用 present_files（符合规范）。
+- 遗留：云端应用是否需要重新发布（`webapp/index.html` 已含双页卡改动）——用户上次未答复，仍未执行。
+
+## 执行摘要（2026-10-04）
 - 流程同前；**今日无新视频**（UP 列表最新仍为 2026-10-03），要点库维持 **21 条**，未新增/修改任何条目。
 - 已核查 `up_summary.json` 无 `auto:true` 兜底残留、`up_raw.json`(21) 与 `up_summary.json`(21) 完全对齐 → 确认无遗留待总结。
 - 抓取：本次**未出现**「本次未抓到，沿用上次数据」。板块 3 天 / 宏观 79 指标(成功 54、失败 0) / 日历 1264 条。

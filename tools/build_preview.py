@@ -586,9 +586,13 @@ __HEAD_SCRIPTS__
         <div class="lg-btn" id="lgSubmit" onclick="submitLogin()">登录</div>
         <div class="lg-btn ghost" id="lgForgot" onclick="startForgot()">忘记密码</div>
         <div class="lg-sep"></div>
-        <div class="lg-note">网页端仅支持<b>邮箱登录</b>（微信/手机号登录仅小程序可用）。<br>
-          登录后笔记存到云端，Mac 和手机用同一邮箱登录就能看到同一份；<br>
-          未登录时笔记只存在本机浏览器。</div>
+        <!-- 这里只说「现在真能做到的事」，不要写还没实现的能力。
+             旧文案承诺过「微信、手机号登录仅小程序可用」，但小程序侧根本没有账号体系
+             （miniprogram/app.js 里 cloudEnv 为空、useCloud 为 false），那是一句空承诺。
+             等小程序真的接了登录再把这句加回来。 -->
+        <div class="lg-note"><b>当前仅支持邮箱登录</b>：注册、密码登录、验证码登录都在这一个邮箱下完成。<br>
+          登录后笔记存到云端，Mac 和手机用同一个邮箱登录就能看到同一份；<br>
+          未登录时笔记只存在本机浏览器，换一台设备看不到。</div>
       </div>
     </div>
   </div>
@@ -1132,7 +1136,13 @@ function setLgMsg(t,ok){const e=document.getElementById('lgMsg');e.textContent=t
 function safeTags(v){try{const a=JSON.parse(v||'[]');return Array.isArray(a)?a:[]}catch(e){return []}}
 
 async function initCloud(){
-  if(!CLOUD_CFG)return;
+  if(!CLOUD_CFG){
+    // 云配置注入了、但这个来源被网关拒之门外（实测 github.io 的预检是 403）。
+    // 入口必须隐藏，但「跨设备同步到底在哪儿能用」必须说清楚 ——
+    // 否则用户看到没有登录按钮，只会以为「同步功能压根没做」。
+    if(CLOUD_CFG_RAW)markCloudBlocked();
+    return;
+  }
   // 非云版（本机工作台）不写死 <script>，需要时才拉这份 62KB 的 SDK。
   // Pages 版会走到这里之前就被 CLOUD_CFG=null 挡掉，不会产生任何请求。
   if(!window.WorkBuddyCloud)await loadSdk();
@@ -1143,6 +1153,15 @@ async function initCloud(){
   }catch(e){return}
   document.getElementById('cloudBtn').style.display='';
   await bootCloud();
+}
+// 当前地址不能同步时，把「去哪儿同步」写进笔记面板的提示条。
+function markCloudBlocked(){
+  const btn=document.getElementById('cloudBtn'), tip=document.getElementById('cloudTip');
+  if(btn)btn.style.display='none';
+  if(tip){
+    tip.textContent='此地址不支持云同步；跨设备同步请用云端应用地址';
+    tip.title=(CLOUD_CFG_RAW&&CLOUD_CFG_RAW.endpoint)||'';
+  }
 }
 function loadSdk(){
   return new Promise(function(res){
@@ -1365,10 +1384,26 @@ function showUpdateInfo(){
     how='页面每次打开都实时去 GitHub Pages 取最新数据，所以数据更新不用重新发布。\n'
        +'唯一例外是 B 站视频要点：那部分要本机跑过语音转写才会生成。';
   }
+  // 三个宿主的「能不能跨设备同步笔记」也不一样，一并说清楚。
+  // 关键事实：登录入口只在「云配置已注入 且 当前来源被网关放行」时才出现。
+  let sync;
+  if(!CLOUD_CFG_RAW){
+    sync='这一版没有注入云配置，笔记只在本机浏览器里，换设备看不到。';
+  }else if(CLOUD_CFG){
+    sync='已开通。打开「我的笔记 → 登录同步」，用邮箱注册（或登录）后，\n'
+       +'笔记就存到云端；Mac 和手机用同一个邮箱登录即共用同一份。\n'
+       +'（当前这条地址就是支持同步的。）';
+  }else{
+    sync='当前地址（'+(h||'本机文件')+'）被云端网关拒绝跨域，登录入口已关闭。\n'
+       +'要在手机和电脑之间同步笔记，请改用这个地址：\n'
+       +CLOUD_CFG_RAW.endpoint+'\n'
+       +'在那上面用邮箱注册一次，之后两台设备登同一个邮箱即可。';
+  }
   alert('数据说明\n\n'
     +'【数据时间】'+g+'\n'
     +'【数据来源】'+src+'\n\n'
     +'【更新方式】'+how+'\n\n'
+    +'【手机同步】'+sync+'\n\n'
     +'【覆盖范围】'+st.days+' 天历史 · '+st.events+' 条事件 · '+st.sector_days
     +' 天 A 股板块行情（'+sr[0]+' ~ '+sr[1]+'）\n'
     +'【市场广度】'+(st.breadth_days||0)+' 天个股涨跌家数（沪深 A 股逐只统计，'
