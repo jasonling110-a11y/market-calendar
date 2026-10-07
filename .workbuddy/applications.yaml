@@ -1,0 +1,5 @@
+applications:
+  - name: 市场日历
+    locator: wbapp_1bw8OOOB07aPP6UKsGy6u1
+  - name: market-calendar-deploy
+    locator: wbapp_uumG9LPdhpnemC04ca98DM

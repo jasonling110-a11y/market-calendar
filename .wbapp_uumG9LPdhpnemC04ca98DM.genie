@@ -1,0 +1,5 @@
+appId: wbapp_uumG9LPdhpnemC04ca98DM
+name: market-calendar-deploy
+localDir: /Users/jason/WorkBuddy/指数看盘/deploy
+appType: web
+entryHtml: index.html
