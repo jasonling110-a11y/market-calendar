@@ -1,6 +1,25 @@
 # 自动化 memory — 市场日历每日更新（automation-1790493311576）
 
-## 执行摘要（最新：2026-10-06 · 全流程完成）
+## 执行摘要（最新：2026-10-07 · 全流程完成）
+- 新增 **1 个视频要点**（归档旧视频）：`BV1sQLy6gEgN` 2026-05-20「5.20 关于黄金的这个观点」13 条
+  → 要点库 23 → **24 条**，覆盖 19 → **20 天**。
+- 🚨 **「auto 兜底」陷阱第三次复现**：`fetch_bilibili.py` 把 2026-05-20 旧视频当新视频转写，
+  `summarize_up.py` 立刻以 `auto:true` 塞 10 条原句碎片 → `up_pending.py` 报「无待办」。
+  **可靠待办信号 = `up_summary.json` 里 `auto==True` 的条目**（本次即 BV1sQLy6gEgN）。
+  `up_raw.json` 的字段是 `txt`（不是 text/transcript），长度用 `len(v['txt'])`。
+- 抓取：**未出现**「本次未抓到，沿用上次数据」。板块 3 天（国庆休市）/ 宏观 79 指标(成功 54、失败 0) /
+  日历 16348 → 7350 条。
+- 推送：`git push` 报 `HTTP2 framing layer` 失败（预期，非分叉）→ 走 `tools/push_via_api.py`，
+  16 文件 / 7.51 MB **一次全成功**，main → `033770ed`；`--dry` = 无待推改动（收敛）。
+- 线上已验证：meta `version=202610072151`、`up_videos=24 / up_days=20`。
+  ⚠️ 大文件（app.html）用 `curl` 直连 Pages 会 **exit=28 截断**，核验改用 `data/meta.js` +
+  `raw.githubusercontent.../up_summary.json` 交叉验证更可靠。
+- 微信推送：无 PushPlus token → 未发送（预期内）。桌面 rsync 成功，副本 24 条 / 20 天。
+- 今日/明日安排：10-07 共 14 条（最高 ★★★ 16:00 央行外汇储备）；
+  10-08 共 8 条（最高 ★★ 02:00 美联储公布货币政策会议纪要）。
+- 遗留：`webapp/index.html` 无 diff（已与远端一致），云端应用如需更新仍要单独发布（workbuddy_sites_deploy，须先征得用户同意）。
+
+## 执行摘要（历史：2026-10-06 · 全流程完成）
 - 新增 **1 个视频要点**：`BV1xpHZ6FE5E` 2026-10-06「10.6 面对他们加速吸收、收紧流动性…」13 条
   → 要点库 22 → **23 条**，覆盖 19 天。
 - 🚨 **陷阱复现（务必记住）**：`fetch_bilibili.py` 打印「没有新视频，无需处理」，
