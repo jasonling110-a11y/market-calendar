@@ -40,6 +40,7 @@ jobs:
           HF_ENDPOINT: https://hf-mirror.com
           HF_HUB_DISABLE_XET: "1"
         run: |
+          set -o pipefail
           python3 tools/probe_bili_cloud.py 2>&1 | tee /tmp/probe.log
 
       - name: 探针结论写入运行摘要

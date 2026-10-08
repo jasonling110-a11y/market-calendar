@@ -88,20 +88,45 @@ def _json(op, url, ref="https://www.bilibili.com/"):
     return json.loads(op.open(req, timeout=25).read().decode("utf-8", "ignore"))
 
 
-def dump_cookies(op, path):
-    lines = ["# Netscape HTTP Cookie File"]
+def dump_cookies(op, path, extra=None):
+    """导出 cookie 给 yt-dlp。extra 是 {name: value}，用于补 buvid3/buvid4 这类指纹。"""
+    rows = {}
     for h in op.handlers:
         cj = getattr(h, "cookiejar", None)
         if cj is None:
             continue
         for c in cj:
-            lines.append("\t".join([
-                c.domain, "TRUE" if c.domain.startswith(".") else "FALSE",
-                c.path or "/", "TRUE" if c.secure else "FALSE",
-                str(int(c.expires or 0)), c.name, c.value or ""]))
+            if c.value:
+                rows[c.name] = (c.domain, c.path or "/", c.value)
+    for k, v in (extra or {}).items():
+        rows[k] = (".bilibili.com", "/", v)
+
+    lines = ["# Netscape HTTP Cookie File"]
+    for name, (dom, pth, val) in rows.items():
+        lines.append("\t".join([
+            dom, "TRUE" if dom.startswith(".") else "FALSE",
+            pth, "TRUE", str(int(time.time()) + 86400 * 30), name, val]))
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+    print(f"  cookie 字段：{sorted(rows.keys())}")
     return path
+
+
+def fingerprint(op):
+    """取 buvid3 / buvid4 指纹。
+    数据中心 IP 下 B 站常对「拉视频页 HTML」返回 412，
+    带上这两个指纹（+ 正确的 UA/Referer）是标准解法。"""
+    try:
+        d = _json(op, "https://api.bilibili.com/x/frontend/finger/spi")
+        dd = d.get("data") or {}
+        b3, b4 = dd.get("b_3"), dd.get("b_4")
+        if b3:
+            print(f"  指纹获取成功：buvid3={str(b3)[:12]}… buvid4={str(b4)[:12] if b4 else '-'}…")
+            return {"buvid3": b3, "buvid4": b4} if b4 else {"buvid3": b3}
+        print(f"  指纹接口未返回 b_3（code={d.get('code')}）")
+    except Exception as e:
+        print(f"  指纹接口异常：{str(e)[:80]}")
+    return {}
 
 
 def probe_env():
@@ -166,9 +191,8 @@ def probe_search(max_tries=3):
                 newest = mine[0]
                 title = re.sub(r"<[^>]+>", "", str(newest.get("title") or "")).strip()
                 print(f"  最新一条：{newest.get('bvid')} / {title[:40]}")
-                cookie_file = dump_cookies(op, os.path.join(TMP, "_cookies.txt"))
-                n_cookie = sum(1 for _ in open(cookie_file))
-                print(f"  导出 cookie：{n_cookie - 1} 条 → {cookie_file}")
+                fp = fingerprint(op)
+                cookie_file = dump_cookies(op, os.path.join(TMP, "_cookies.txt"), fp)
                 return verdict(2, "搜索接口可达且未被风控", True,
                                f"code=0，命中 {len(mine)} 条"), mine, cookie_file
             return verdict(2, "搜索接口可达但未命中该 UP", False,
@@ -203,8 +227,14 @@ def probe_download(videos, cookie_file):
     for v in todo:
         bvid = v["bvid"]
         target = os.path.join(TMP, bvid)
-        cmd = [sys.executable, "-m", "yt_dlp", "--no-warnings", "--quiet",
-               "--proxy", ""]
+        cmd = [sys.executable, "-m", "yt_dlp", "--no-warnings",
+               "--proxy", "",
+               # 412 的常见补救：显式带 UA / Referer / Origin
+               "--user-agent", UA,
+               "--add-header", "Referer:https://www.bilibili.com/",
+               "--add-header", "Origin:https://www.bilibili.com",
+               "--add-header", "Accept-Language:zh-CN,zh;q=0.9",
+               "--retries", "3"]
         if cookie_file and os.path.exists(cookie_file):
             cmd += ["--cookies", cookie_file]
         cmd += ["-f", "ba", "-o", target + ".%(ext)s",
@@ -217,7 +247,8 @@ def probe_download(videos, cookie_file):
             continue
         el = time.time() - t0
         if r.returncode != 0:
-            print(f"  ✗ {bvid} 下载失败：{(r.stderr or '').strip()[:140]}")
+            err = ((r.stderr or "") + (r.stdout or "")).strip().replace("\n", " ")
+            print(f"  ✗ {bvid} 下载失败（{el:.1f}s）：{err[:200]}")
             continue
         hit = [os.path.join(TMP, f) for f in os.listdir(TMP) if f.startswith(bvid)]
         if not hit:
@@ -233,8 +264,38 @@ def probe_download(videos, cookie_file):
     return verdict(3, "yt-dlp 下载音频", True, f"{len(jobs)} 个成功"), jobs
 
 
+def make_test_wav(path, seconds=25):
+    """生成一段 16kHz 单声道测试音频。
+    用途：即使下载环节失败，也能**独立验证 whisper 能否在 CI 跑起来**
+    （模型能否下载、能否加载、转写管线是否通、耗时多少）。
+    内容是合成音，识别结果必然为空 —— 这是预期的，不代表转写有问题。"""
+    import math
+    import struct
+    import wave
+    sr = 16000
+    with wave.open(path, "w") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        frames = bytearray()
+        for i in range(sr * seconds):
+            t = i / sr
+            env = 0.5 * (1 - math.cos(2 * math.pi * (t % 1.0)))      # 起停包络
+            v = int(12000 * env * math.sin(2 * math.pi * 220 * t))
+            frames += struct.pack("<h", v)
+        w.writeframes(bytes(frames))
+    return path
+
+
 def probe_whisper(jobs):
     step(4, f"faster-whisper 转写（模型 {MODEL}）")
+    synthetic = False
+    if not jobs:
+        p = make_test_wav(os.path.join(TMP, "silence_test.wav"))
+        jobs = [{"bvid": "（合成测试音）", "path": p}]
+        synthetic = True
+        print("  ⚠️ 上一步没拿到音频，改用 25s 合成音频独立验证 whisper 管线")
+
     t_load0 = time.time()
     try:
         from faster_whisper import WhisperModel
@@ -244,7 +305,7 @@ def probe_whisper(jobs):
         model = WhisperModel(MODEL, device="cpu", compute_type="int8")
     except Exception as e:
         return verdict(4, "faster-whisper 转写", False, f"模型加载失败 {str(e)[:90]}")
-    print(f"  模型加载完成，{time.time() - t_load0:.1f}s")
+    print(f"  模型（{MODEL}）加载完成，{time.time() - t_load0:.1f}s")
 
     ok_any, notes = False, []
     for j in jobs:
@@ -258,15 +319,20 @@ def probe_whisper(jobs):
             el = time.time() - t0
             dur = getattr(info, "duration", 0) or 0
             ratio = (el / dur) if dur else 0
-            print(f"  ✓ {j['bvid']} 转写 {len(txt)} 字，耗时 {el:.0f}s"
+            print(f"  ✓ {j['bvid']} 转写完成：{len(txt)} 字，耗时 {el:.0f}s"
                   f"（音频 {dur:.0f}s，实时率 {ratio:.2f}x）")
-            print(f"    开头：{txt[:100]}")
+            if txt:
+                print(f"    开头：{txt[:100]}")
+            elif synthetic:
+                print("    （合成音没有语音内容，识别为空属正常）")
             ok_any = True
-            notes.append(f"{len(txt)}字/{el:.0f}s")
+            notes.append(f"{el:.0f}s/{dur:.0f}s 音频")
         except Exception as e:
             print(f"  ✗ {j['bvid']} 转写失败：{str(e)[:110]}")
+
     if ok_any:
-        return verdict(4, "faster-whisper 转写", True, "；".join(notes))
+        tag = "whisper 管线跑通（合成音，未含真实内容）" if synthetic else "真实视频转写成功"
+        return verdict(4, tag, True, "；".join(notes))
     return verdict(4, "faster-whisper 转写", False, "全部失败")
 
 
@@ -279,11 +345,10 @@ def main():
 
     probe_env()
     ok2, videos, cookie_file = probe_search()
-    jobs = probe_download(videos, cookie_file) if videos else ([], None)
-    if isinstance(jobs, tuple):
-        _ok3, jobs = jobs
-    if jobs:
-        probe_whisper(jobs)
+    ok3, jobs = (False, [])
+    if videos:
+        ok3, jobs = probe_download(videos, cookie_file)
+    probe_whisper(jobs)
 
     step(5, "结论汇总")
     for n, name, ok, detail in RESULTS:
@@ -303,8 +368,9 @@ def main():
         shutil.rmtree(TMP, ignore_errors=True)
     except Exception:
         pass
+    return 0 if all_ok else 1
 
 
 if __name__ == "__main__":
     TMP = ""
-    main()
+    sys.exit(main())
