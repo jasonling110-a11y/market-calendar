@@ -38,5 +38,20 @@ $PY tools/build_ics.py              # → docs/app.html + docs/market-calendar.i
 所有时间戳一律**显式东八区**。本机 CST / Actions UTC 差 8 小时，`date.today()` 甚至会差一天。
 
 ## 数据源
-B 站视频要点**只有本机能做**（whisper 转写 + 读语义提炼），Actions 没有 yt-dlp/whisper。
+B 站视频要点目前**由本机完成**（抓音频 + whisper 转写 + AI 读语义提炼）。
+
+### 「B 站环节能否上云」的实测结论（2026-10-08，探针 `tools/probe_bili_cloud.py`）
+此前写的「Actions 没有 yt-dlp/whisper」是**误判** —— 那是「没装」，不是「装不了」。实测：
+- **whisper 在 Actions 上完全能跑**（4 核 / 15.6GB）。模型 base 加载 3.0s，转写正常。
+  ⚠️ 但必须 **`pip install "av<19"`**：`av 19.0.1` 删了 `metadata_errors` 参数，
+  而 `faster-whisper 1.2.1` 仍在传它 → 报 `open() got an unexpected keyword argument
+  'metadata_errors'`。本机用的是 `av 18.1.0`，所以本机正常、CI 报错，极易误判成「CI 跑不了」。
+- **真正的堵点是 B 站的 IP 风控**：CI 的 Azure 数据中心 IP 拉视频页 **412**，
+  且**连 `api.bilibili.com/x/web-interface/view` 也是 412**（换 API 通道绕不过）。
+  但 `search/type` 搜索接口**不 412**（code=0）—— 所以风控是按接口分级的。
+  本机（住宅 IP）**cookie 文件为空也能下**，故确认是 IP 维度而非 cookie 维度。
+- 唯一已知解法：`SESSDATA` 登录态 cookie（=把账号凭据放进 Secrets，有安全风险且会过期）
+  或走住宅代理（有成本）。
+- ➡️ **结论：全上云不划算；要摆脱 WorkBuddy 就走本机 launchd 定时。**
+
 本机跑完必须把 `tools/data/up_summary.json` + `up_raw.json` 推上去，否则云端日历留空窗。
