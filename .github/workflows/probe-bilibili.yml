@@ -1,0 +1,52 @@
+name: 探针 · B站抓取+whisper 云端可行性
+
+# 这条 workflow 是**一次性探针**，不属于日常管线：
+#   * 只支持手动触发（workflow_dispatch），不挂定时
+#   * 只读：不 commit、不 push、不写任何仓库数据文件
+# 目的：验证 GitHub Actions 能否完成「抓 B 站音频 + whisper 转写」，
+#       以判断是否可以把 B 站环节从「本机 + WorkBuddy」整体迁到云端。
+#
+# 探针脚本：tools/probe_bili_cloud.py
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    # whisper 在 CPU 上转写 + 模型下载，给足余量（日常管线是 30 分钟）
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: 安装探针依赖（yt-dlp + faster-whisper）
+        run: |
+          python -m pip install --upgrade pip
+          pip install yt-dlp faster-whisper
+
+      - name: 运行探针
+        env:
+          WHISPER_MODEL: base
+          PROBE_MAX_VIDEOS: "1"
+          HF_ENDPOINT: https://hf-mirror.com
+          HF_HUB_DISABLE_XET: "1"
+        run: |
+          python3 tools/probe_bili_cloud.py 2>&1 | tee /tmp/probe.log
+
+      - name: 探针结论写入运行摘要
+        if: always()
+        run: |
+          echo "## B 站抓取 + whisper 云端探针" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          sed -n '/结论汇总/,$p' /tmp/probe.log 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "（无日志）" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
