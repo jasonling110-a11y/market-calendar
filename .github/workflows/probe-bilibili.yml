@@ -31,7 +31,10 @@ jobs:
       - name: 安装探针依赖（yt-dlp + faster-whisper）
         run: |
           python -m pip install --upgrade pip
-          pip install yt-dlp faster-whisper
+          # av 必须锁 <19：av 19.0.1 移除了 metadata_errors 参数，
+          # 而 faster-whisper 1.2.1 仍在传它 → "open() got an unexpected
+          # keyword argument 'metadata_errors'"。本机用 av 18.1.0 一切正常。
+          pip install yt-dlp faster-whisper "av<19"
 
       - name: 运行探针
         env:

@@ -204,8 +204,61 @@ def probe_search(max_tries=3):
                    f"连续 {max_tries} 次未拿到 code=0"), [], None
 
 
+def _cookie_dict(cookie_file):
+    d = {}
+    if cookie_file and os.path.exists(cookie_file):
+        for ln in open(cookie_file, encoding="utf-8"):
+            if ln.startswith("#") or not ln.strip():
+                continue
+            p = ln.rstrip("\n").split("\t")
+            if len(p) >= 7:
+                d[p[5]] = p[6]
+    return d
+
+
+def download_via_api(bvid, cookie_file):
+    """绕过 yt-dlp「拉视频页 HTML」这一步 —— 数据中心 IP 下它会被 412 拦。
+
+    改走 B 站官方 API：view（拿 cid）→ playurl（拿 dash 音频流地址）→ 直连下载。
+    探针已证明 api.bilibili.com 在 CI 上不 412（搜索接口 code=0）。
+    """
+    ck = _cookie_dict(cookie_file)
+    hdr = {"User-Agent": UA, "Referer": "https://www.bilibili.com/",
+           "Accept": "application/json, text/plain, */*"}
+    if ck:
+        hdr["Cookie"] = "; ".join(f"{k}={v}" for k, v in ck.items())
+
+    def get(url):
+        with urllib.request.urlopen(urllib.request.Request(url, headers=hdr),
+                                    timeout=30) as r:
+            return json.loads(r.read().decode("utf-8", "ignore"))
+
+    v = get(f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}")
+    if v.get("code") != 0:
+        raise RuntimeError(f"view 接口 code={v.get('code')} {v.get('message')}")
+    cid = (v.get("data") or {}).get("cid")
+    print(f"    view 接口 OK：cid={cid}")
+
+    p = get("https://api.bilibili.com/x/player/playurl"
+            f"?bvid={bvid}&cid={cid}&fnval=16&fourk=1&platform=pc&high_quality=1")
+    if p.get("code") != 0:
+        raise RuntimeError(f"playurl code={p.get('code')} {p.get('message')}")
+    audios = ((p.get("data") or {}).get("dash") or {}).get("audio") or []
+    if not audios:
+        raise RuntimeError("playurl 未返回 dash.audio")
+    audios.sort(key=lambda a: a.get("bandwidth", 0), reverse=True)
+    print(f"    取到音频流：bandwidth={audios[0].get('bandwidth')}")
+
+    out = os.path.join(TMP, bvid + ".m4s")
+    rq = urllib.request.Request(audios[0]["baseUrl"], headers={
+        "User-Agent": UA, "Referer": "https://www.bilibili.com/"})
+    with urllib.request.urlopen(rq, timeout=300) as r, open(out, "wb") as f:
+        shutil.copyfileobj(r, f)
+    return out
+
+
 def probe_download(videos, cookie_file):
-    step(3, "yt-dlp 下载音频")
+    step(3, "下载音频（yt-dlp → B 站 API 双通道）")
     done = {}
     if os.path.exists(RAW):
         try:
@@ -216,7 +269,7 @@ def probe_download(videos, cookie_file):
     print(f"  仓库里已转写 {len(done)} 个视频（根据 up_raw.json）")
     todo = [v for v in videos if v["bvid"] not in done][:MAX_VIDEOS]
     if not todo:
-        print("  没有未入库的新视频可测，改为用已知能下的 bvid 试下")
+        print("  没有未入库的新视频可测，改用列表里最新的一条试")
         todo = [{"bvid": v["bvid"], "d": v.get("d", ""),
                  "t": re.sub(r"<[^>]+>", "", str(v.get("title") or "")).strip()}
                 for v in videos[:1]]
@@ -243,25 +296,40 @@ def probe_download(videos, cookie_file):
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         except subprocess.TimeoutExpired:
-            print(f"  ✗ {bvid} 下载超时（>900s）")
+            print(f"  ✗ {bvid} yt-dlp 下载超时（>900s）")
+            r = None
+
+        hit = None
+        if r is not None:
+            el = time.time() - t0
+            if r.returncode == 0:
+                hit = [os.path.join(TMP, f) for f in os.listdir(TMP)
+                       if f.startswith(bvid)]
+                hit = hit[0] if hit else None
+            else:
+                err = ((r.stderr or "") + (r.stdout or "")).strip().replace("\n", " ")
+                print(f"  ✗ {bvid} yt-dlp 失败（{el:.1f}s）：{err[:170]}")
+
+        if hit:
+            print(f"  ✓ {bvid} yt-dlp 下载成功：{os.path.getsize(hit) / 1048576:.1f} MB")
+            jobs.append({"bvid": bvid, "d": v.get("d", ""),
+                         "t": v.get("t", ""), "path": hit, "via": "yt-dlp"})
             continue
-        el = time.time() - t0
-        if r.returncode != 0:
-            err = ((r.stderr or "") + (r.stdout or "")).strip().replace("\n", " ")
-            print(f"  ✗ {bvid} 下载失败（{el:.1f}s）：{err[:200]}")
-            continue
-        hit = [os.path.join(TMP, f) for f in os.listdir(TMP) if f.startswith(bvid)]
-        if not hit:
-            print(f"  ✗ {bvid} 返回 0 但找不到文件")
-            continue
-        size = os.path.getsize(hit[0]) / 1024 / 1024
-        print(f"  ✓ {bvid} 下载成功：{os.path.basename(hit[0])} "
-              f"{size:.1f} MB，{el:.1f}s")
-        jobs.append({"bvid": bvid, "d": v.get("d", ""),
-                     "t": v.get("t", ""), "path": hit[0]})
+
+        print(f"  ↻ {bvid} 改用 API 通道重试（view → playurl → 直连）")
+        t0 = time.time()
+        try:
+            hit = download_via_api(bvid, cookie_file)
+            print(f"  ✓ {bvid} API 通道下载成功：{os.path.getsize(hit) / 1048576:.1f} MB"
+                  f"，{time.time() - t0:.1f}s")
+            jobs.append({"bvid": bvid, "d": v.get("d", ""),
+                         "t": v.get("t", ""), "path": hit, "via": "api"})
+        except Exception as e:
+            print(f"  ✗ {bvid} API 通道也失败：{str(e)[:170]}")
     if not jobs:
-        return verdict(3, "yt-dlp 下载音频", False, "全部下载失败"), []
-    return verdict(3, "yt-dlp 下载音频", True, f"{len(jobs)} 个成功"), jobs
+        return verdict(3, "下载音频", False, "yt-dlp 与 API 两条通道均失败"), []
+    vias = "、".join(sorted({j["via"] for j in jobs}))
+    return verdict(3, "下载音频", True, f"{len(jobs)} 个成功（通道：{vias}）"), jobs
 
 
 def make_test_wav(path, seconds=25):
