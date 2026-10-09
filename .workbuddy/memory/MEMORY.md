@@ -34,6 +34,22 @@ $PY tools/build_ics.py              # → docs/app.html + docs/market-calendar.i
 - 改它要跑两个自检 + 负向测试：`tools/check_profitgap_tab.js`（86 项）、
   `tools/browser_check_profitgap.js`（40 项，真实浏览器）、`git diff --numstat` 复核改动范围。
 
+## 🚨 两个「看起来是代码 bug、其实是环境」的坑（2026-10-09 实测）
+1. **whisper 加载报 `503 Service Unavailable`** → 不是模型缺失（`~/.cache/huggingface` 里有 145MB `model.bin`），
+   而是 `huggingface_hub` 加载时会联网解析 revision，本机走系统代理 → 503。
+   **解法：`HF_HUB_OFFLINE=1`** 强制读本地缓存。重跑写法：
+   ```bash
+   cd tools && HF_HUB_OFFLINE=1 /Users/jason/.workbuddy/binaries/python/envs/default/bin/python fetch_bilibili.py --asr
+   ```
+   （注意 whisper 装在 **venv** `/Users/jason/.workbuddy/binaries/python/envs/default/bin/python`，
+   管理的 3.13.12 里**没有** faster_whisper。）
+2. **GitHub 完全不可达时别怀疑仓库/token** → 本机全部流量走 `utun4`（Shadowrocket TUN，
+   fake-IP `198.18.x.x`）。**国外站点（github/pypi/google/cloudflare）随代理节点状态集体超时**；
+   系统代理 1082 对 github 返回 `503 tunnel failed`；直连 GitHub 真实 IP（api.github.com=20.205.243.168）
+   TCP 能连但 TLS 被重置。此时 `git push` 报 `SSL_ERROR_SYSCALL`、`push_via_api.py` 报
+   `UNEXPECTED_EOF_WHILE_READING` —— **先测 `curl https://www.google.com` 判断是不是节点挂了**，
+   是就等节点恢复再补推，不要改代码/换 token。
+
 ## 时区
 所有时间戳一律**显式东八区**。本机 CST / Actions UTC 差 8 小时，`date.today()` 甚至会差一天。
 
