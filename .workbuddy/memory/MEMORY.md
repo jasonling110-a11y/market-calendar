@@ -49,6 +49,16 @@ $PY tools/build_ics.py              # → docs/app.html + docs/market-calendar.i
    TCP 能连但 TLS 被重置。此时 `git push` 报 `SSL_ERROR_SYSCALL`、`push_via_api.py` 报
    `UNEXPECTED_EOF_WHILE_READING` —— **先测 `curl https://www.google.com` 判断是不是节点挂了**，
    是就等节点恢复再补推，不要改代码/换 token。
+3. **「能连上、但大请求体被丢弃」——比第 2 条更阴**（2026-10-10 实测）：
+   小请求（GET、小 blob）全部正常，只有**上传**会挂。curl 打 `/git/blobs` 实测阈值：
+   **≤256KB 请求体 → 稳定 201；512KB → 10 次成功 5 次；≥1MB → 基本全 000**。
+   `git push`（哪怕推到新分支，无分叉问题）也会报
+   `unable to rewind rpc post data` + `SSL ... bad record mac`，把 `http.postBuffer`
+   调到 500MB 也无效；`--noproxy '*'` 与走 `127.0.0.1:1082` 两条路一样。
+   ➡️ **不是仓库/token/代码问题，唯一解法 = 分文件反复重试**（1.5MB 文件往往第 3～5 次能过）。
+   **判成功必须 `grep "推送成功"`**，不能用 `✓ <文件名>` —— 后者只是 blob 上传成功的输出，
+   后面的建 tree / 建 commit / PATCH ref 失败它照样打印，会把失败误判成成功。
+   收尾判据照旧：**全量逐字节比对 103 个 tracked 文件为 0 差异**。
 
 ## 时区
 所有时间戳一律**显式东八区**。本机 CST / Actions UTC 差 8 小时，`date.today()` 甚至会差一天。
