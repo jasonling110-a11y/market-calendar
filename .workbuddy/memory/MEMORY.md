@@ -23,8 +23,17 @@ $PY tools/build_ics.py              # → docs/app.html + docs/market-calendar.i
   数据与源码一律走 `$PY tools/push_via_api.py`（token 在 `~/.market-calendar.github.json`）。
 - `webapp/index.html` 不在 `daily.yml` 的 `git add` 里 → 云端那份只能靠 `workbuddy_sites_deploy`
   单独发布（**须先征得用户同意**）。
-- 收敛判据 = **全量逐字节比对 92 个 tracked 文件为 0 差异**，不是 `--dry`。
+- 收敛判据 = **全量逐字节比对（2026-10-13 起是 106 个）tracked 文件为 0 差异**，不是 `--dry`。
   注意本地 `tools/data/*.json` 常比远端旧（远端 21:00 定时任务更新），此时**不要**推产物。
+
+## ⚠️ 本机 workbench 会与自动化抢跑（2026-10-13 实测）
+- `tools/workbench.py`（launchd `com.market-calendar.workbench`，KeepAlive 常驻 `127.0.0.1:8787`）
+  持有 `tools/data/.full_ran.json` 标记，能触发「完整更新 + 同步到云端(GitHub)」。
+- 后果：**你推完 HEAD 还可能再变**。本轮 21:37 推完 `bfead0d3`，21:41 workbench 又重建推了
+  `dc672e9e`（内容与我的逐字节一致，无损失）。→ **别把这个当成推送失败/被覆盖**；
+  判据永远是全量逐字节比对，不是 HEAD sha。
+- ℹ️ `push_via_api.py` 的 commit message **取自本地 `git log -1`**（脚本第 182 行），
+  不是推送时刻生成 —— 所以 workbench 推出来的 commit 会沿用你本地最新 commit 的文案，看着像"重推"。
 
 ## 利润断层栏（易改错）
 - 有**两组等价页卡**，`aria-selected` 由同一个 `setTab()` 同步：
@@ -37,7 +46,9 @@ $PY tools/build_ics.py              # → docs/app.html + docs/market-calendar.i
 ## 🚨 两个「看起来是代码 bug、其实是环境」的坑（2026-10-09 实测）
 1. **whisper 加载报 `503 Service Unavailable`** → 不是模型缺失（`~/.cache/huggingface` 里有 145MB `model.bin`），
    而是 `huggingface_hub` 加载时会联网解析 revision，本机走系统代理 → 503。
-   **解法：`HF_HUB_OFFLINE=1`** 强制读本地缓存。重跑写法：
+   ✅ **2026-10-13 已根治：`HF_HUB_OFFLINE=1` 已写进 `tools/daily_update.sh`**（第 18 行），
+   此后直接 `bash tools/daily_update.sh` 即可，不必再手动补 `--asr`。若哪天又 503，先确认这行还在。
+   手动重跑写法（备用）：
    ```bash
    cd tools && HF_HUB_OFFLINE=1 /Users/jason/.workbuddy/binaries/python/envs/default/bin/python fetch_bilibili.py --asr
    ```
