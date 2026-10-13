@@ -15,6 +15,7 @@ VENV=/Users/jason/.workbuddy/binaries/python/envs/default/bin/python
 SYS=/Users/jason/.workbuddy/binaries/python/versions/3.13.12/bin/python3
 export HF_ENDPOINT=https://hf-mirror.com
 export HF_HUB_DISABLE_XET=1          # 不设会因 xet 传输 401 而下载失败
+export HF_HUB_OFFLINE=1              # 强制读本地缓存；不设会联网解析 revision，走代理必 503
 
 step() { echo; echo "──────────────── $1 ────────────────"; }
 
