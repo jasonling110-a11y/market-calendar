@@ -19,11 +19,27 @@ $PY tools/build_ics.py              # → docs/app.html + docs/market-calendar.i
 - 所以**改完源码后必须显式 dispatch `daily.yml`**（或本地重建后自己推产物），
   否则 Pages 重新发布的仍是**仓库里的旧产物**。
 - 判 `runs` 一定要看 **`name`**，别看 `event`、也别看 `run_number`（不同 workflow 各自编号）。
-- **`git push` 在本机永久不可用**（无凭据 + 本地/远端是长期平行的双历史）→
-  数据与源码一律走 `$PY tools/push_via_api.py`（token 在 `~/.market-calendar.github.json`）。
+- ✅ **`git push` 其实可用（2026-10-14 实测）** —— 之前的结论「永久不可用」是错的。
+  失败的真实原因只是**本地与远端是两条平行历史**（`non-fast-forward`），不是网络。
+  正确姿势（把新提交挂在远端 HEAD 上 → 变 fast-forward）：
+  ```bash
+  git fetch origin main:refs/remotes/origin/main   # 注意：不给 refspec 只会写 FETCH_HEAD
+  git add -A && tree=$(git write-tree)
+  c=$(git commit-tree $tree -p $(git rev-parse origin/main) -m "每日更新 <北京时间>")
+  git -c http.postBuffer=524288000 push origin "${c}:refs/heads/main"   # zsh 必须 ${c}
+  ```
+  **关键优势：packfile 是 zlib 压缩的**，1.6MB 的 app.html 压完约 1/4，
+  天然绕开「>256KB 原始请求体被丢弃」的坑 —— 比 `push_via_api.py` 逐 blob 重试稳得多。
+  ⚠️ zsh 里 `"$c:refs/..."` 会被当成 `:r` 修饰符，务必写 `"${c}:refs/..."`。
+- 备用通道仍保留 `$PY tools/push_via_api.py`（token 在 `~/.market-calendar.github.json`）。
+  但它**遇到第一个上传失败就 return 1（无自动重试）**，必须自己分批：
+  小文件 ≤300KB 一批，大文件逐个重试；实测 ≥1.5MB 的文件（docs/app.html、preview/index.html）
+  可能连续 19 次都过不去 → 此时直接用上面的 git packfile 通道。
 - `webapp/index.html` 不在 `daily.yml` 的 `git add` 里 → 云端那份只能靠 `workbuddy_sites_deploy`
   单独发布（**须先征得用户同意**）。
-- 收敛判据 = **全量逐字节比对（2026-10-13 起是 106 个）tracked 文件为 0 差异**，不是 `--dry`。
+- 收敛判据 = **全量逐字节比对（2026-10-14 起是 107 个）tracked 文件为 0 差异**，不是 `--dry`。
+  判法：`git fetch origin main:refs/remotes/origin/main` 后，用 `git hash-object --stdin-paths`
+  算本地 blob sha，与 `git ls-tree -r origin/main` 的 sha 逐一对齐。
   注意本地 `tools/data/*.json` 常比远端旧（远端 21:00 定时任务更新），此时**不要**推产物。
 
 ## ⚠️ 本机 workbench 会与自动化抢跑（2026-10-13 实测）
