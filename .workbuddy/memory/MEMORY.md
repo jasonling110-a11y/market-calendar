@@ -34,6 +34,10 @@ $PY tools/build_ics.py              # → docs/app.html + docs/market-calendar.i
 - ✅ **`Error in the HTTP2 framing layer` 的解：加 `-c http.version=HTTP/1.1`（2026-10-19 实测）**。
   该报错连 `git fetch` 都会失败（看似网络挂），但换成 HTTP/1.1 后 fetch 与 push 都**一次成功**，
   不用换 token、也不用退到 `push_via_api.py`。建议把 fetch/push 两条命令都带上这个参数。
+- ⚠️ **但「github.com 443 TCP 不可达」是另一种病，HTTP/1.1 治不了（2026-10-20 实测）**：
+  `curl github.com` = 000（connect 超时 75s）而 `curl api.github.com` = **200** 时，
+  git 通道已死、只剩 API 通道 → 直接 `push_via_api.py`（20 文件 / 8.59MB 一次全成功），别再调 git 参数。
+  **判据顺序：先分别 curl 两个域名，再决定走哪条通道。**
 - ⚠️ **macOS 没有 `timeout` 命令**：`timeout git fetch …` 会 `command not found` 且**静默不执行**，
   随后你看到的 `origin/main` 是旧值 —— 极易误判「fetch 成功 / 远端没变」。别用 `timeout` 包 git。
 - 核验线上大文件必须 `curl --http1.1 --compressed`；否则 1.5MB 的 history.js 会**静默截断到 1.21MB**
