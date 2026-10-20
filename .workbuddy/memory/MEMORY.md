@@ -31,6 +31,13 @@ $PY tools/build_ics.py              # → docs/app.html + docs/market-calendar.i
   **关键优势：packfile 是 zlib 压缩的**，1.6MB 的 app.html 压完约 1/4，
   天然绕开「>256KB 原始请求体被丢弃」的坑 —— 比 `push_via_api.py` 逐 blob 重试稳得多。
   ⚠️ zsh 里 `"$c:refs/..."` 会被当成 `:r` 修饰符，务必写 `"${c}:refs/..."`。
+- ✅ **`Error in the HTTP2 framing layer` 的解：加 `-c http.version=HTTP/1.1`（2026-10-19 实测）**。
+  该报错连 `git fetch` 都会失败（看似网络挂），但换成 HTTP/1.1 后 fetch 与 push 都**一次成功**，
+  不用换 token、也不用退到 `push_via_api.py`。建议把 fetch/push 两条命令都带上这个参数。
+- ⚠️ **macOS 没有 `timeout` 命令**：`timeout git fetch …` 会 `command not found` 且**静默不执行**，
+  随后你看到的 `origin/main` 是旧值 —— 极易误判「fetch 成功 / 远端没变」。别用 `timeout` 包 git。
+- 核验线上大文件必须 `curl --http1.1 --compressed`；否则 1.5MB 的 history.js 会**静默截断到 1.21MB**
+  （仍返回 200）。判据用 `shasum -a 256` 与本地逐字节比，别看大小。
 - 备用通道仍保留 `$PY tools/push_via_api.py`（token 在 `~/.market-calendar.github.json`）。
   但它**遇到第一个上传失败就 return 1（无自动重试）**，必须自己分批：
   小文件 ≤300KB 一批，大文件逐个重试；实测 ≥1.5MB 的文件（docs/app.html、preview/index.html）
