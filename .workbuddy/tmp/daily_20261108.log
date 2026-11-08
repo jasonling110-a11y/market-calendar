@@ -1,0 +1,102 @@
+
+──────────────── 1/10 A 股板块行情 ────────────────
+       2026-11-04 领涨: ['半导体10.55%', '贵金属10.08%', '电子化学品9.0%'] 领跌: ['白酒-1.67%', '饮料制造-1.47%', '保险-0.69%']
+       2026-11-05 领涨: ['光伏设备8.02%', '贵金属4.95%', '影视院线4.57%'] 领跌: ['煤炭开采加工-1.38%', '油气开采及服务-1.03%', '银行-0.73%']
+       2026-11-06 领涨: ['种植业与林业1.67%', '银行0.99%', '公路铁路运输0.98%'] 领跌: ['元件-5.48%', '通信设备-3.92%', '电子化学品-3.91%']
+
+──────────────── 2/10 B 站 UP 主视频（下载音频 + 转写） ────────────────
+  (1/2) 转写 2026-11-07 11.7  醒一醒！
+      加载 whisper base 模型 ...
+        ✓ 1251 字，24s
+  (2/2) 转写 2026-11-06 11.6
+        ✓ 1290 字，15s
+[✓] 转写完成，累计 65 个视频 → /Users/jason/WorkBuddy/2026-09-26-21-23-48/market-calendar/tools/data/up_raw.json
+[1/3] 抓取 UP 主「艾丽的无废话财经」视频列表 ...
+      找到 8 个视频，最新：2026-11-07
+[2/3] 下载 2 个新视频的音频（跳过已转写的 63 个）
+  (1/2) ✓ 2026-11-07 11.7  醒一醒！
+  (2/2) ✓ 2026-11-06 11.6
+[3/3] 启动独立进程转写 2 个音频 ...
+
+──────────────── 3/10 B 站要点兜底摘录（新视频先自动入包，避免日历空窗） ────────────────
+  [!] BV1gpx16LERY 转写太短，跳过
+  ✓ 2026-11-06  11.6  → 摘出 10 条
+  ✓ 2026-11-07  11.7  醒一醒！  → 摘出 10 条
+[✓] 兜底摘录 2 个视频 → /Users/jason/WorkBuddy/2026-09-26-21-23-48/market-calendar/tools/data/up_summary.json
+    提示：AI 润色后的正式要点会直接覆盖 auto 版（重新写入同一 bvid 即可）
+
+──────────────── 4/10 宏观数值与市场预期 ────────────────
+[✓] 指标 79 个（成功 54 / 失败 0）
+    数据点 19592 个，其中有实际值 19298 个
+    已过滤 102 个 01-01 假日期数据点（接口早期数据精度退化）
+    体积 1218KB → /Users/jason/WorkBuddy/2026-09-26-21-23-48/market-calendar/tools/data/macro_series.json
+
+──────────────── 5/10 财经日历（东财，含未来排期与央行动态） ────────────────
+[2/2] 完成
+      原始 16328 条 → 保留 7428 条（45%）
+      覆盖 596 天 / 2802 个指标名 / 205 个国家
+      范围 2025-05-01 ~ 2028-01-19
+      → /Users/jason/WorkBuddy/2026-09-26-21-23-48/market-calendar/tools/data/calendar.json  (342KB)
+
+──────────────── 6/10 重建数据包 ────────────────
+[i] 载入板块行情 444 个交易日
+[i] 载入个股涨跌家数 438 个交易日
+[i] 载入板块催化 领涨 42 天 / 301 条
+[i] 载入板块催化 领跌 42 天 / 80 条
+[i] 财经日历：已过滤非五大资本市场条目 —— 数据 2296 条、事件(展会/访问等) 1816 条、动态 1806 条
+[i] 日历字典表裁剪：国家 205 → 2，指标名 2802 → 112
+[✓] 网页数据包：docs/data/*.js  1606KB（云版页面运行时加载）
+[✓] 历史：5510 天（1929 ~ 2028）/ 137 条事件 / 5259 天数值 / 444 天板块 → 1580KB
+[✓] 个股涨跌家数：覆盖 438 天（438/444 的板块日有广度）
+[✓] 领涨催化：38 天有催化 / 296 条（主因 115 条），另有 4 天已核查确认无催化
+[✓] 领跌催化：20 天有催化 / 79 条（主因 44 条），另有 22 天已核查确认无催化（界面标注技术性回调 / 资金轮动）
+[✓] 财经日历：1238 条 / 覆盖 331 天 / 112 个指标名
+[!] 日历挂上实际值：606 条 （这些不再重复出现在数值卡片里）
+[!] CAL2MACRO 有 1 条对不上日历名称（名字写错或该指标未收录）：
+      中国 / 社会融资规模存量
+[✓] UP 主观点：64 个视频 / 覆盖 53 天
+[!] 以下 1 个视频已转写但尚未总结，需写入 data/up_summary.json 后重建：
+      BV1gpx16LERY  2026-10-31  10.31人生第一次现场看足球比赛：苏超
+[✓] 未来：39 天 / 64 条预告
+[✓] 输出目录：/Users/jason/WorkBuddy/2026-09-26-21-23-48/market-calendar/miniprogram/data
+
+──────────────── 7/10 重新生成预览版 ────────────────
+[✓] 预览版生成：/Users/jason/WorkBuddy/2026-09-26-21-23-48/market-calendar/preview/index.html  (1703KB)
+
+──────────────── 8/10 生成 iPhone 日历订阅源（.ics） ────────────────
+    → /Users/jason/WorkBuddy/2026-09-26-21-23-48/market-calendar/docs/app.html（完整网页版，手机可直接用）
+[✓] 日历订阅源：130 个日程
+    窗口 2026-10-25 ~ 2027-03-08（过去 14 天 + 未来 120 天）
+    只收录 ★★ 以上；★★★ 提前 15 分钟提醒
+    → /Users/jason/WorkBuddy/2026-09-26-21-23-48/market-calendar/docs/market-calendar.ics  (75KB)
+    → /Users/jason/WorkBuddy/2026-09-26-21-23-48/market-calendar/docs/index.html
+
+──────────────── 9/10 推送今日摘要到微信（PushPlus） ────────────────
+[!] 没有找到 PushPlus token，推送未发送。
+    配置方法（二选一）：
+      1. 环境变量： export PUSHPLUS_TOKEN=你的token
+      2. 写配置文件：/Users/jason/.market-calendar.push.json
+         内容： {"token": "你的token"}
+    获取 token：https://www.pushplus.plus/ 微信扫码登录 → 一对一消息 → token
+    想先看推送内容： python3 push_daily.py --dry
+
+──────────────── 待总结的 B 站视频（需 AI 阅读转写后写入 up_summary.json） ────────────────
+[!] 1 / 65 个视频已转写但尚未总结
+    总结后写入：/Users/jason/WorkBuddy/2026-09-26-21-23-48/market-calendar/tools/data/up_summary.json
+
+====================================================================
+BV1gpx16LERY  2026-10-31  10.31人生第一次现场看足球比赛：苏超
+====================================================================
+
+
+──────────────── 10/10 同步到 GitHub（让云端发布也拿到最新数据） ────────────────
+To https://github.com/jasonling110-a11y/market-calendar.git
+ ! [rejected]        main -> main (fetch first)
+error: failed to push some refs to 'https://github.com/jasonling110-a11y/market-calendar.git'
+hint: Updates were rejected because the remote contains work that you do not
+hint: have locally. This is usually caused by another repository pushing to
+hint: the same ref. If you want to integrate the remote changes, use
+hint: 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+
+[✓] 每日更新流程结束
