@@ -119,3 +119,11 @@ B 站视频要点目前**由本机完成**（抓音频 + whisper 转写 + AI 读
 - ➡️ **结论：全上云不划算；要摆脱 WorkBuddy 就走本机 launchd 定时。**
 
 本机跑完必须把 `tools/data/up_summary.json` + `up_raw.json` 推上去，否则云端日历留空窗。
+
+### ⚠️ 「转写结果为空」先查音频时长，别怀疑 whisper（2026-11-11）
+`fetch_bilibili.py` 的 `download_audio()` **只要发现 `data/audio/<bvid>.*` 存在就直接 return，不会重下**。
+所以音频被截断时，`--asr` 会永远转出空文本，重跑多少遍都没用。
+- 判据：`av.open(p).duration`（微秒）对比 B 站 `view` 接口的 `duration`（秒）；也看文件体积。
+- 修法：`mv` 掉坏音频 → 手动 `python -m yt_dlp --proxy "" --cookies data/_bili_cookies.txt -f ba -o 'data/audio/<bvid>.%(ext)s' <url>`。
+- 若确认**视频本身就短且只有音乐**（如 30 秒纯 BGM），关掉 `vad_filter` 只出「電音…」拟声词 → 无语音内容，
+  **不要写要点**（写了只能编造）。这与 `BV1gpx16LERY`（苏超 Vlog，14 字）同属良性遗留。
